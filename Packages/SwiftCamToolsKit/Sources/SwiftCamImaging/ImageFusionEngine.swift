@@ -17,11 +17,9 @@ public final class ImageFusionEngine {
         let outputs = buffers.compactMap { reducer.reduceNoise(pixelBuffer: $0, level: settings.noiseReductionLevel) }
         guard var composite = outputs.first else { return nil }
         for image in outputs.dropFirst() {
-            let filter = MTIMultilayerCompositingFilter()
+            let filter = MultilayerCompositingFilter()
             filter.inputBackgroundImage = composite
-            var layer = MTILayer()
-            layer.content = image
-            filter.layers = [layer]
+            filter.layers = [MultilayerCompositingFilter.Layer(content: image)]
             if let fused = filter.outputImage {
                 composite = fused
             }
