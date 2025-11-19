@@ -1,0 +1,10 @@
+SwiftCamTools is a camera app designed for IOS, specificially low-light conditions. It has a minimalist desgn, similar to that of the default IOS camera app that makes it easy for first-timers to use. As well as being easy to use, it has more advanced options available.
+
+Tech stack:
+
+Capture long-exposure frames    ->	AVCaptureDevice + AVCapturePhotoOutput
+Capture multiple exposures (bracketed)  ->  AVCapturePhotoBracketSettings
+RAW sensor data ->  AVCapturePhotoOutput with .unprocessed
+Noise reduction + fusion    ->  Apple's built-in fusion OR custom Metal pipeline
+UI  ->  SwiftUI or UIKit
+Performance ->  Metal + Accelerate

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>SwiftCamTools</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UILaunchStoryboardName</key>
+	<string></string>
+	<key>UIRequiresFullScreen</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>SwiftCamTools needs access to the camera for capturing photos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>SwiftCamTools stores images to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>SwiftCamTools needs to read your photo library to show captured images.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Audio data is needed for certain capture modes.</string>
+</dict>
+</plist>
