@@ -1,0 +1,116 @@
+name: Build IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      export_method:
+        description: "Export method passed to xcodebuild (app-store, ad-hoc, development, enterprise)"
+        required: false
+        default: app-store
+      configuration:
+        description: "Xcode configuration to archive"
+        required: false
+        default: Release
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  ipa:
+    runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      SCHEME: SwiftCamTools
+      EXPORT_METHOD: ${{ github.event_name == 'workflow_dispatch' && inputs.export_method || 'app-store' }}
+      CONFIGURATION: ${{ github.event_name == 'workflow_dispatch' && inputs.configuration || 'Release' }}
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      PROVISIONING_PROFILE_NAME: ${{ secrets.APPLE_PROVISIONING_PROFILE_NAME }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Define derived paths
+        id: paths
+        run: |
+          archive="$RUNNER_TEMP/SwiftCamTools.xcarchive"
+          export_dir="$RUNNER_TEMP/ipa"
+          echo "ARCHIVE_PATH=$archive" >> "$GITHUB_ENV"
+          echo "EXPORT_DIR=$export_dir" >> "$GITHUB_ENV"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+          echo "export_dir=$export_dir" >> "$GITHUB_OUTPUT"
+
+      - name: Select Xcode 15.4
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Install tooling
+        run: |
+          brew update
+          brew install xcodegen xcbeautify
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Import signing assets
+        uses: apple-actions/import-codesign-certs@v2
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE_P12 }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          profile-base64: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+
+      - name: Archive SwiftCamTools
+        run: |
+          set -eo pipefail
+          xcodebuild \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$ARCHIVE_PATH" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROVISIONING_PROFILE_NAME" \
+            clean archive | xcbeautify
+        env:
+          NSUnbufferedIO: "YES"
+        shell: bash
+
+      - name: Create export options
+        run: |
+          cat <<EOF > ExportOptions.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>${EXPORT_METHOD}</string>
+            <key>teamID</key>
+            <string>${TEAM_ID}</string>
+            <key>signingStyle</key>
+            <string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.swiftcamtools.app</key>
+              <string>${PROVISIONING_PROFILE_NAME}</string>
+            </dict>
+            <key>destination</key>
+            <string>export</string>
+            <key>compileBitcode</key>
+            <true/>
+            <key>stripSwiftSymbols</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Export IPA
+        run: |
+          mkdir -p "$EXPORT_DIR"
+          xcodebuild -exportArchive \
+            -archivePath "$ARCHIVE_PATH" \
+            -exportOptionsPlist ExportOptions.plist \
+            -exportPath "$EXPORT_DIR"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwiftCamTools-${{ github.run_id }}
+          path: ${{ steps.paths.outputs.export_dir }}/*.ipa
+          if-no-files-found: error
