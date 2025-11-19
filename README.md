@@ -39,33 +39,57 @@ System frameworks used by the modules: `AVFoundation`, `Photos`, `CoreImage`, `M
 - **Manual controls drawer** — ISO (100–6400), shutter (1/8s–8s), noise reduction mix, and a long-exposure toggle. Presets reset with a single tap to keep experimentation safe.
 - **Grid overlay** — optional thirds grid stays out of the way but matches most tripod framing workflows.
 
-## Getting started (macOS + Xcode)
-1. Install [XcodeGen](https://github.com/yonaskolb/XcodeGen) if you have not already: `brew install xcodegen`.
+## Local workflows
+
+### Windows/Linux (Swift Package only)
+Use this path when you only need to touch the reusable modules under `Packages/SwiftCamToolsKit`:
+
+```pwsh
+cd Packages/SwiftCamToolsKit
+swift build
+swift test
+```
+
+The UI and capture layers are guarded with `#if canImport(...)`, so they compile out on non-Apple hosts.
+
+### macOS + Xcode (full iOS app)
+1. Install required tooling:
+   ```bash
+   brew install xcodegen xcbeautify
+   ```
 2. Generate the Xcode project from the blueprint:
-   ```pwsh
+   ```bash
    cd SwiftCamTools
    xcodegen generate
    ```
-3. Open the newly created `SwiftCamTools.xcodeproj` in Xcode and select the *SwiftCamTools* scheme.
-4. Trust camera + photo permissions when prompted on device; simulators cannot access true low-light sensors.
+3. (Optional) Inspect available simulators so your destination matches the installed runtimes: `xcrun simctl list devices available`.
+4. Build & test exactly like CI does:
+   ```bash
+   xcodebuild \
+     -scheme SwiftCamTools \
+     -destination 'platform=iOS Simulator,name=iPhone 15 Pro,OS=latest' \
+     -derivedDataPath DerivedData \
+     CODE_SIGNING_ALLOWED=NO \
+     test | xcbeautify
+   ```
+5. Open `SwiftCamTools.xcodeproj` if you prefer to iterate inside Xcode.
+
+Trust camera + photo permissions when prompted on a physical device; simulators cannot access true low-light sensors.
 
 ## Testing
-Once the project is generated you can run the included unit tests from Xcode (`Product > Test`) or from the command line:
-```pwsh
-cd SwiftCamTools
-xcodebuild test -scheme SwiftCamTools -destination 'platform=iOS Simulator,name=iPhone 15 Pro'
-```
+Once the project is generated you can run the included unit tests from Xcode (`Product > Test`) or via the command shown above.
 
 > **Note:** These commands must be executed on macOS with Xcode installed. This repository currently contains project sources only and does not include a pre-generated `.xcodeproj`.
 
 ## Continuous Integration
 
-The repository ships with `.github/workflows/ios-ci.yml`, a GitHub Actions workflow that runs on `macos-14` and performs the following for every push/PR targeting `main`:
+The repository ships with `.github/workflows/ios-ci.yml`, a GitHub Actions workflow that runs on `macos-latest` and performs the following for every push/PR targeting `main`:
 
-1. Checks out the repo and selects Xcode 15.4.
-2. Installs XcodeGen via Homebrew.
-3. Generates `SwiftCamTools.xcodeproj` from `project.yml`.
-4. Builds and tests the `SwiftCamTools` scheme on the iPhone 15 Pro simulator with signing disabled.
+1. Checks out the repo and selects the newest Xcode available on the runner.
+2. Installs XcodeGen + xcbeautify via Homebrew, then prints the active Xcode version.
+3. Generates `SwiftCamTools.xcodeproj` from `project.yml` and resolves Swift package dependencies up front (cached under `DerivedData/SourcePackages`).
+4. Lists the available simulators so the `-destination` choice is always visible in the logs.
+5. Runs `xcodebuild test` against the iPhone 15 Pro simulator (signing disabled) with output piped through `xcbeautify`, storing full logs and the `.xcresult` bundle as workflow artifacts.
 
 After pushing to GitHub, add the following badge at the top of this README (replace `<your-org>` with your account or organization name):
 

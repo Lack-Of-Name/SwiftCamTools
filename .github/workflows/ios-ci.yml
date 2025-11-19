@@ -8,46 +8,58 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: macos-14
+    runs-on: macos-latest
     timeout-minutes: 30
+    env:
+      SCHEME: SwiftCamTools
+      DESTINATION: "platform=iOS Simulator,name=iPhone 15 Pro,OS=latest"
+      XCODE_APP: /Applications/Xcode.app
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode 15.4
-        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+      - name: Select latest Xcode
+        run: sudo xcode-select -s "$XCODE_APP/Contents/Developer"
 
       - name: Install tooling
         run: |
           brew update
-          brew install xcodegen
+          brew install xcodegen xcbeautify
+
+      - name: Print Xcode version
+        run: xcodebuild -version
 
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Force Xcode 15 project format
+      - name: Resolve Swift package dependencies
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
+          xcodebuild \
+            -scheme "$SCHEME" \
+            -resolvePackageDependencies \
+            -clonedSourcePackagesDirPath DerivedData/SourcePackages
 
-          pbx = Path('SwiftCamTools.xcodeproj/project.pbxproj')
-          text = pbx.read_text()
-          replacements = {
-              'objectVersion = 77;': 'objectVersion = 56;',
-              'compatibilityVersion = "Xcode 16.0";': 'compatibilityVersion = "Xcode 15.0";'
-          }
-          updated = text
-          for old, new in replacements.items():
-              updated = updated.replace(old, new)
-
-          pbx.write_text(updated)
-          PY
+      - name: List available simulators
+        run: xcrun simctl list devices available
 
       - name: Build & test (iPhone 15 Pro)
         run: |
+          set -o pipefail
           xcodebuild \
-            -scheme SwiftCamTools \
-            -destination 'platform=iOS Simulator,name=iPhone 15 Pro' \
+            -scheme "$SCHEME" \
+            -destination "$DESTINATION" \
+            -derivedDataPath DerivedData \
             CODE_SIGNING_ALLOWED=NO \
-            test
+            test \
+            | tee xcodebuild.log \
+            | xcbeautify
+
+      - name: Upload build artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-logs
+          path: |
+            xcodebuild.log
+            DerivedData/Logs/Test
