@@ -16,7 +16,7 @@ public final class MetalNoiseReducer {
 
     public func denoise(pixelBuffer: CVPixelBuffer, sigma: Float) -> CVPixelBuffer? {
         guard let commandBuffer = commandQueue.makeCommandBuffer() else { return nil }
-        guard let texture = makeTexture(from: pixelBuffer) else { return nil }
+        guard var texture = makeTexture(from: pixelBuffer) else { return nil }
 
         let filter = MPSImageGaussianBlur(device: device, sigma: sigma)
         filter.encode(commandBuffer: commandBuffer, inPlaceTexture: &texture, fallbackCopyAllocator: nil)

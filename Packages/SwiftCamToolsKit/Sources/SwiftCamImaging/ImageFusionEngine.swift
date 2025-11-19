@@ -16,7 +16,9 @@ public final class ImageFusionEngine {
         for image in outputs.dropFirst() {
             let filter = MTIMultilayerCompositingFilter()
             filter.inputBackgroundImage = composite
-            filter.layers = [MTILayer(content: image)]
+            var layer = MTILayer()
+            layer.content = image
+            filter.layers = [layer]
             if let fused = filter.outputImage {
                 composite = fused
             }
