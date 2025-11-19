@@ -54,7 +54,11 @@ public final class CameraController: NSObject, ObservableObject {
                 if self.session.canAddOutput(self.photoOutput) {
                     self.session.addOutput(self.photoOutput)
                 }
-                self.photoOutput.isHighResolutionCaptureEnabled = true
+                if #available(iOS 16.0, *) {
+                    // Default configuration already prefers the largest supported photo dimensions on iOS 16+.
+                } else {
+                    self.photoOutput.isHighResolutionCaptureEnabled = true
+                }
                 self.state = .running
                 self.session.startRunning()
             } catch {

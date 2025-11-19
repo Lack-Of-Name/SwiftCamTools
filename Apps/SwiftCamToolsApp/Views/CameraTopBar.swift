@@ -31,7 +31,6 @@ struct CameraTopBar: View {
         .padding(.top, 20)
     }
 }
-#endif
 
 private struct TopBarButton: View {
     let symbol: String
@@ -70,4 +69,4 @@ private enum TimerMode: String, CaseIterable {
         }
     }
 }
-``
+#endif
