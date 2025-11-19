@@ -1,3 +1,4 @@
+#if canImport(SwiftUI)
 import SwiftUI
 
 struct CameraTopBar: View {
@@ -30,6 +31,7 @@ struct CameraTopBar: View {
         .padding(.top, 20)
     }
 }
+#endif
 
 private struct TopBarButton: View {
     let symbol: String

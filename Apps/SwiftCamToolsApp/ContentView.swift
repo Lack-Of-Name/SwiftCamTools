@@ -1,3 +1,4 @@
+#if canImport(SwiftUI)
 import SwiftUI
 import SwiftCamCore
 
@@ -55,3 +56,4 @@ private struct IdentifiedCameraError: Identifiable {
     let id = UUID()
     let error: CameraError
 }
+#endif

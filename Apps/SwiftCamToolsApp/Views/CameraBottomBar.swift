@@ -1,3 +1,4 @@
+#if canImport(SwiftUI)
 import SwiftUI
 import SwiftCamCore
 
@@ -32,6 +33,7 @@ struct CameraBottomBar: View {
         .padding(.bottom, 24)
     }
 }
+#endif
 
 private struct ModeSelector: View {
     @Binding var selectedMode: CaptureMode

@@ -1,5 +1,7 @@
+#if canImport(SwiftUI) && canImport(AVFoundation) && canImport(UIKit)
 import SwiftUI
 import AVFoundation
+import UIKit
 
 struct CameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession?
@@ -12,6 +14,7 @@ struct CameraPreviewView: UIViewRepresentable {
         uiView.session = session
     }
 }
+#endif
 
 final class PreviewView: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }

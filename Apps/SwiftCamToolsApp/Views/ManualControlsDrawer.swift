@@ -1,3 +1,4 @@
+#if canImport(SwiftUI)
 import SwiftUI
 import SwiftCamCore
 
@@ -69,6 +70,7 @@ struct ManualControlsDrawer: View {
         .padding(.horizontal, 16)
     }
 }
+#endif
 
 private struct ControlSliderRow: View {
     let title: String

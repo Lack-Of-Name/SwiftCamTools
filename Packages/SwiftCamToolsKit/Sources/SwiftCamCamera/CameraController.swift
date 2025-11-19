@@ -23,10 +23,11 @@ public final class CameraController: NSObject, ObservableObject {
     @Published public private(set) var lastExposure: ExposureSettings = ExposureSettings()
 
     public init?(configuration: AppConfiguration = AppConfiguration(), fusionEngine: ImageFusionEngine? = nil) {
-        guard let reducer = AdaptiveNoiseReducer(), let engine = fusionEngine ?? ImageFusionEngine(reducer: reducer) else {
+        guard let reducer = AdaptiveNoiseReducer() else {
             return nil
         }
-        self.fusionEngine = engine
+        let resolvedEngine = fusionEngine ?? ImageFusionEngine(reducer: reducer)
+        self.fusionEngine = resolvedEngine
         self.configuration = configuration
         super.init()
         session.sessionPreset = .photo
@@ -71,8 +72,8 @@ public final class CameraController: NSObject, ObservableObject {
             let photoSettings: AVCapturePhotoSettings
             switch mode {
             case .bracketed:
-                let bracketSettings: [AVCapturePhotoBracketSettings.BracketedStillImageSettings] = settings.bracketOffsets.map { offset in
-                    .init(evBias: offset)
+                let bracketSettings: [AVCaptureBracketedStillImageSettings] = settings.bracketOffsets.map { offset in
+                    AVCaptureAutoExposureBracketedStillImageSettings.autoExposureSettings(exposureTargetBias: offset)
                 }
                 let bracket = AVCapturePhotoBracketSettings(rawPixelFormatType: 0, processedFormat: [AVVideoCodecKey: AVVideoCodecType.hevc], bracketedSettings: bracketSettings)
                 bracket.isLensStabilizationEnabled = true

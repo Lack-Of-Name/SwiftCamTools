@@ -1,3 +1,4 @@
+#if canImport(SwiftUI)
 import SwiftUI
 import SwiftCamCore
 
@@ -12,3 +13,4 @@ struct SwiftCamToolsApp: App {
         }
     }
 }
+#endif

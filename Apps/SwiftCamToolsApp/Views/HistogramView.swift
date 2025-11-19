@@ -1,3 +1,4 @@
+#if canImport(SwiftUI)
 import SwiftUI
 import SwiftCamCore
 
@@ -20,6 +21,7 @@ struct HistogramView: View {
         .frame(height: 80)
     }
 }
+#endif
 
 #Preview {
     HistogramView(histogram: HistogramModel(samples: stride(from: 0.0, through: 1.0, by: 0.05).map { _ in Double.random(in: 0...1) }))

@@ -1,3 +1,4 @@
+#if canImport(SwiftUI)
 import SwiftUI
 
 struct GridOverlayView: View {
@@ -26,6 +27,7 @@ struct GridOverlayView: View {
         .allowsHitTesting(false)
     }
 }
+#endif
 
 #Preview {
     GridOverlayView()

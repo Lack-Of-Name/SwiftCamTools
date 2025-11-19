@@ -1,3 +1,4 @@
+#if canImport(AVFoundation)
 import Foundation
 import AVFoundation
 import SwiftCamCore
@@ -23,3 +24,4 @@ final class CameraServiceBridge: ObservableObject {
         pipeline?.controller.capture(mode: mode, settings: settings, completion: completion)
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if canImport(SwiftUI) && canImport(AVFoundation) && canImport(Combine)
 import Foundation
 import AVFoundation
 import Combine
@@ -120,3 +121,4 @@ final class CameraViewModel: ObservableObject {
         settings = copy
     }
 }
+#endif
