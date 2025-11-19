@@ -26,6 +26,24 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Force Xcode 15 project format
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          pbx = Path('SwiftCamTools.xcodeproj/project.pbxproj')
+          text = pbx.read_text()
+          replacements = {
+              'objectVersion = 77;': 'objectVersion = 56;',
+              'compatibilityVersion = "Xcode 16.0";': 'compatibilityVersion = "Xcode 15.0";'
+          }
+          updated = text
+          for old, new in replacements.items():
+              updated = updated.replace(old, new)
+
+          pbx.write_text(updated)
+          PY
+
       - name: Build & test (iPhone 15 Pro)
         run: |
           xcodebuild \
