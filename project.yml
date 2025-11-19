@@ -46,6 +46,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.swiftcamtools.app
     dependencies:
       - package: SwiftCamToolsKit
+        product: SwiftCamCore
+      - package: SwiftCamToolsKit
+        product: SwiftCamCamera
       - package: Collections
       - package: Algorithms
       - package: MetalPetal
