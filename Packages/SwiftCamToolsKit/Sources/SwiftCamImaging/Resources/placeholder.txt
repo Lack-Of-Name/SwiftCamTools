@@ -1,0 +1,1 @@
+This placeholder ensures Swift Package Manager includes the Resources directory. Replace with real resource assets when available.
