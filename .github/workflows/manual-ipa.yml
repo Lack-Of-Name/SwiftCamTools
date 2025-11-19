@@ -1,0 +1,83 @@
+name: Manual IPA Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      simulator:
+        description: "Destination passed to xcodebuild (e.g. platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5)"
+        required: false
+        default: "platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5"
+      configuration:
+        description: "Xcode build configuration"
+        required: false
+        default: Release
+
+jobs:
+  build-ipa:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      SCHEME: SwiftCamTools
+      XCODE_APP: /Applications/Xcode.app
+      DESTINATION: ${{ inputs.simulator }}
+      CONFIGURATION: ${{ inputs.configuration }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select latest Xcode
+        run: sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+
+      - name: Install tooling
+        run: |
+          brew update
+          brew install xcodegen xcbeautify
+
+      - name: Print Xcode version
+        run: xcodebuild -version
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve Swift package dependencies
+        run: |
+          xcodebuild \
+            -scheme "$SCHEME" \
+            -resolvePackageDependencies \
+            -clonedSourcePackagesDirPath DerivedData/SourcePackages
+
+      - name: Build SwiftUI app (simulator)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -destination "$DESTINATION" \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build \
+            | tee build.log \
+            | xcbeautify
+
+      - name: Package simulator IPA
+        run: |
+          APP_PATH="DerivedData/Build/Products/${CONFIGURATION}-iphonesimulator/${SCHEME}.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "App bundle not found at $APP_PATH" >&2
+            exit 1
+          fi
+          mkdir -p ipa/Payload
+          rm -rf ipa/Payload/*
+          cp -R "$APP_PATH" ipa/Payload/
+          pushd ipa >/dev/null
+          zip -qry ${SCHEME}-simulator.ipa Payload
+          popd >/dev/null
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwiftCamTools-simulator-ipa
+          path: |
+            build.log
+            ipa/${SCHEME}-simulator.ipa

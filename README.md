@@ -91,6 +91,17 @@ The repository ships with `.github/workflows/ios-ci.yml`, a GitHub Actions workf
 4. Lists the available simulators so the `-destination` choice is always visible in the logs.
 5. Runs `xcodebuild test` against the iPhone 15 Pro simulator (signing disabled) with output piped through `xcbeautify`, storing full logs and the `.xcresult` bundle as workflow artifacts.
 
+### Manual IPA builds
+
+Need a signed-off simulator `.ipa` without triggering CI automatically? The repository also includes `.github/workflows/manual-ipa.yml`, which exposes a **Run workflow** button in the Actions tab. It:
+
+1. Installs the same toolchain as the CI job (latest macOS runner + Xcode).
+2. Generates the Xcode project via XcodeGen and resolves all Swift packages.
+3. Builds the `SwiftCamTools` scheme in Release for the requested simulator destination (defaults to iPhone 16 Pro / iOS 18.5).
+4. Packages the resulting `SwiftCamTools.app` into a simulator-only `.ipa` (unsigned; not installable on physical devices) and uploads it as an artifact alongside the raw build log.
+
+Launch it manually whenever you need a fresh build artifact without waiting for the CI pipeline.
+
 After pushing to GitHub, add the following badge at the top of this README (replace `<your-org>` with your account or organization name):
 
 ```markdown
