@@ -1,6 +1,25 @@
 // swift-tools-version: 5.9
 import PackageDescription
 
+let applePlatformSupport: Bool = {
+    #if os(iOS) || os(macOS) || os(tvOS) || os(watchOS)
+    return true
+    #else
+    return false
+    #endif
+}()
+
+let metalPetalDependency: [Package.Dependency] = applePlatformSupport ? [
+    .package(url: "https://github.com/MetalPetal/MetalPetal.git", branch: "master")
+] : []
+
+let imagingDependencies: [Target.Dependency] = applePlatformSupport ? [
+    "SwiftCamCore",
+    "MetalPetal"
+] : [
+    "SwiftCamCore"
+]
+
 let package = Package(
     name: "SwiftCamToolsKit",
     defaultLocalization: "en",
@@ -14,9 +33,8 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-collections.git", from: "1.1.0"),
-        .package(url: "https://github.com/apple/swift-algorithms.git", from: "1.2.0"),
-        .package(url: "https://github.com/MetalPetal/MetalPetal.git", branch: "master")
-    ],
+        .package(url: "https://github.com/apple/swift-algorithms.git", from: "1.2.0")
+    ] + metalPetalDependency,
     targets: [
         .target(
             name: "SwiftCamCore",
@@ -28,10 +46,7 @@ let package = Package(
         ),
         .target(
             name: "SwiftCamImaging",
-            dependencies: [
-                "SwiftCamCore",
-                "MetalPetal"
-            ],
+            dependencies: imagingDependencies,
             path: "Sources/SwiftCamImaging",
             resources: [
                 .process("Resources")

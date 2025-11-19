@@ -1,6 +1,8 @@
+#if canImport(AVFoundation) && canImport(Combine) && canImport(CoreVideo)
 import Foundation
 import AVFoundation
 import Combine
+import CoreVideo
 import SwiftCamCore
 
 public final class CapturePipeline: ObservableObject {
@@ -38,3 +40,4 @@ public final class CapturePipeline: ObservableObject {
         histogram = HistogramModel(samples: samples, bucketCount: 32)
     }
 }
+#endif

@@ -1,7 +1,9 @@
 import Foundation
+import SwiftCamCore
+
+#if canImport(MetalPerformanceShaders) && canImport(Metal) && canImport(CoreVideo)
 import Metal
 import MetalPerformanceShaders
-import SwiftCamCore
 import CoreVideo
 
 public final class MetalNoiseReducer {
@@ -38,3 +40,4 @@ public final class MetalNoiseReducer {
 
     private var textureCache: CVMetalTextureCache?
 }
+#endif

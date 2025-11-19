@@ -1,6 +1,9 @@
 import Foundation
-import MetalPetal
 import SwiftCamCore
+
+#if canImport(MetalPetal) && canImport(CoreVideo)
+import MetalPetal
+import CoreVideo
 
 public final class ImageFusionEngine {
     private let reducer: NoiseReducer
@@ -26,3 +29,4 @@ public final class ImageFusionEngine {
         return composite
     }
 }
+#endif

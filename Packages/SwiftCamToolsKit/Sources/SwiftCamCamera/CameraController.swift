@@ -1,3 +1,4 @@
+#if canImport(AVFoundation) && canImport(Combine)
 import Foundation
 import AVFoundation
 import Combine
@@ -98,3 +99,4 @@ extension CameraController: AVCapturePhotoCaptureDelegate {
         captureCompletion?(.success(photo))
     }
 }
+#endif

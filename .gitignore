@@ -1,0 +1,69 @@
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# General editor cruft
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Swift Package Manager build products
+.swiftpm/
+**/.build/
+.build/
+
+# Xcode user-specific files
+DerivedData/
+**/xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xccheckout
+*.xcscmblueprint
+*.xcuserstate
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Artifacts and archives
+build/
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.dwarfdump
+*.xcarchive
+*.xccoverage
+
+# Playgrounds timeline
+timeline.xctimeline
+playground.xcworkspace
+
+# Swift Playgrounds derived files
+Sources/**/*.playgroundmodule
+playground.xcworkspace/contents.xcworkspacedata
+
+# Fastlane outputs
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+# CocoaPods (if added later)
+Pods/
+Podfile.lock
+
+# Carthage (if added later)
+Carthage/Build/
+Carthage/Checkouts/
+
+# Accidental secrets
+*.p12
+*.mobileprovision
+*.key
+*.pem

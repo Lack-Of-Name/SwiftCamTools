@@ -1,7 +1,10 @@
 import Foundation
+import SwiftCamCore
+
+#if canImport(MetalPetal) && canImport(CoreVideo)
 import MetalPetal
 import Accelerate
-import SwiftCamCore
+import CoreVideo
 
 public protocol NoiseReducer {
     func reduceNoise(pixelBuffer: CVPixelBuffer, level: Float) -> MTIImage?
@@ -26,3 +29,4 @@ public final class AdaptiveNoiseReducer: NoiseReducer {
         return filter.outputImage
     }
 }
+#endif
