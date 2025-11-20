@@ -173,7 +173,8 @@ final class CameraViewModel: ObservableObject {
         exposureUpdateWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.service.applyPreview(settings: self.settings)
+            let previewSettings = self.makePreviewSettings(from: self.settings)
+            self.service.applyPreview(settings: previewSettings)
         }
         exposureUpdateWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120), execute: workItem)
@@ -312,6 +313,13 @@ final class CameraViewModel: ObservableObject {
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
 #endif
+    }
+
+    private func makePreviewSettings(from settings: ExposureSettings) -> ExposureSettings {
+        var preview = settings
+        preview.duration = safetyLimits.clampPreview(duration: preview.duration)
+        preview.autoISO = true
+        return preview
     }
 
     deinit {

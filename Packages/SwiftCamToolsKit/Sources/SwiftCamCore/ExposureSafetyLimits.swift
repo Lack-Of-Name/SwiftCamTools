@@ -10,6 +10,7 @@ public struct ExposureSafetyLimits {
     public let maxISO: Float
     public let minShutterSeconds: Double
     public let maxShutterSeconds: Double
+    public let previewMaxShutterSeconds: Double
     public let highlightRatioThreshold: Double
     public let recoveryFrameBudget: Int
     public let recoveryISO: Float
@@ -23,6 +24,7 @@ public struct ExposureSafetyLimits {
                 maxISO: 1600,
                 minShutterSeconds: 1.0 / 500.0,
                 maxShutterSeconds: 0.12,
+                previewMaxShutterSeconds: 1.0 / 60.0,
                 highlightRatioThreshold: 0.85,
                 recoveryFrameBudget: 3,
                 recoveryISO: 200,
@@ -34,6 +36,7 @@ public struct ExposureSafetyLimits {
                 maxISO: 4800,
                 minShutterSeconds: 0.1,
                 maxShutterSeconds: 10.0,
+                previewMaxShutterSeconds: 0.08,
                 highlightRatioThreshold: 0.88,
                 recoveryFrameBudget: 4,
                 recoveryISO: 400,
@@ -45,6 +48,7 @@ public struct ExposureSafetyLimits {
                 maxISO: 2000,
                 minShutterSeconds: 1.0 / 125.0,
                 maxShutterSeconds: 0.75,
+                previewMaxShutterSeconds: 1.0 / 45.0,
                 highlightRatioThreshold: 0.86,
                 recoveryFrameBudget: 3,
                 recoveryISO: 250,
@@ -56,6 +60,7 @@ public struct ExposureSafetyLimits {
                 maxISO: 1600,
                 minShutterSeconds: 1.0 / 250.0,
                 maxShutterSeconds: 0.5,
+                previewMaxShutterSeconds: 1.0 / 60.0,
                 highlightRatioThreshold: 0.85,
                 recoveryFrameBudget: 3,
                 recoveryISO: 160,
@@ -76,5 +81,16 @@ public struct ExposureSafetyLimits {
 
     public func clamp(durationSeconds seconds: Double) -> Double {
         max(minShutterSeconds, min(seconds, maxShutterSeconds))
+    }
+
+    public func clampPreview(duration value: CMTimeValue) -> CMTimeValue {
+        let seconds = Double(value) / 1_000_000_000.0
+        let clamped = clampPreview(durationSeconds: seconds)
+        return CMTimeValue(clamped * 1_000_000_000.0)
+    }
+
+    public func clampPreview(durationSeconds seconds: Double) -> Double {
+        let capped = min(seconds, previewMaxShutterSeconds)
+        return max(1.0 / 1000.0, capped)
     }
 }

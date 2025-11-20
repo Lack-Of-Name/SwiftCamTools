@@ -138,7 +138,7 @@ public final class CameraController: NSObject, ObservableObject {
     }
 
     public func applyPreviewExposure(settings: ExposureSettings) {
-        sessionQueue.async { _ = self.applyExposureSettings(settings) }
+        sessionQueue.async { _ = self.applyExposureSettings(settings, enableSubjectMonitoring: false) }
     }
 
     public func setPreviewQuality(_ quality: PreviewQuality) {
@@ -216,7 +216,7 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
 }
 
 extension CameraController {
-    private func applyExposureSettings(_ settings: ExposureSettings) -> CameraError? {
+    private func applyExposureSettings(_ settings: ExposureSettings, enableSubjectMonitoring: Bool = true) -> CameraError? {
         guard let device = captureDevice else { return nil }
         guard device.isExposureModeSupported(.custom) else { return .configurationFailed("Custom exposure not supported on this device.") }
 
@@ -239,7 +239,7 @@ extension CameraController {
 
             device.setExposureModeCustom(duration: duration, iso: resolvedISO, completionHandler: nil)
             applyOverexposureFallbackIfNeeded(device: device, iso: resolvedISO, durationSeconds: clampedSeconds)
-            device.isSubjectAreaChangeMonitoringEnabled = true
+            device.isSubjectAreaChangeMonitoringEnabled = enableSubjectMonitoring
             return nil
         } catch {
             return .configurationFailed(error.localizedDescription)
