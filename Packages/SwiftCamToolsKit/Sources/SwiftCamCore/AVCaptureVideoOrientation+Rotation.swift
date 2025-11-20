@@ -21,7 +21,7 @@ public enum CameraOrientation: String, Codable, CaseIterable, Equatable {
     }
 
     #if canImport(AVFoundation)
-    @available(iOS, introduced: 10.0, obsoleted: 17.0, message: "Use rotationAngle with AVCaptureDeviceRotationCoordinator")
+    @available(iOS, introduced: 10.0, deprecated: 17.0, message: "Use rotationAngle with AVCaptureDeviceRotationCoordinator")
     public var legacyAVOrientation: AVCaptureVideoOrientation {
         switch self {
         case .portrait: return .portrait
