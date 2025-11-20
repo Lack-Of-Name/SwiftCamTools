@@ -32,7 +32,7 @@ struct ManualControlsDrawer: View {
                 viewModel.shutterSeconds
             }, set: { newValue in
                 viewModel.updateShutter(seconds: newValue)
-            }), range: 0.125...8, formatter: { value in
+            }), range: 0.125...60, formatter: { value in
                 String(format: "%.2fs", value)
             })
 

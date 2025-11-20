@@ -22,12 +22,15 @@ public final class CameraController: NSObject, ObservableObject {
     @Published public private(set) var state: PipelineState = .idle
     @Published public private(set) var lastExposure: ExposureSettings = ExposureSettings()
 
-    public init?(configuration: AppConfiguration = AppConfiguration(), fusionEngine: ImageFusionEngine? = nil) {
-        guard let reducer = AdaptiveNoiseReducer() else {
-            return nil
+    public init(configuration: AppConfiguration = AppConfiguration(), fusionEngine: ImageFusionEngine? = nil) {
+        if let fusionEngine {
+            self.fusionEngine = fusionEngine
+        } else if let adaptiveReducer = AdaptiveNoiseReducer() {
+            self.fusionEngine = ImageFusionEngine(reducer: adaptiveReducer)
+        } else {
+            // Passthrough fallback keeps the controller usable even when Metal is unavailable (e.g. simulator on older Macs).
+            self.fusionEngine = ImageFusionEngine(reducer: PassthroughNoiseReducer())
         }
-        let resolvedEngine = fusionEngine ?? ImageFusionEngine(reducer: reducer)
-        self.fusionEngine = resolvedEngine
         self.configuration = configuration
         super.init()
         session.sessionPreset = .photo

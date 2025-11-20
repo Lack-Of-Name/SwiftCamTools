@@ -19,6 +19,14 @@ public final class AdaptiveNoiseReducer: NoiseReducer {
     }
 }
 
+public final class PassthroughNoiseReducer: NoiseReducer {
+    public init() {}
+
+    public func reduceNoise(pixelBuffer: CVPixelBuffer, level: Float) -> MTIImage? {
+        nil
+    }
+}
+
 public final class ImageFusionEngine {
     public init(reducer: NoiseReducer) {}
 

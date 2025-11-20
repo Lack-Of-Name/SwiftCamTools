@@ -15,7 +15,7 @@ public final class CameraController {
     public private(set) var lastExposure: ExposureSettings = ExposureSettings()
     private let placeholderSession = AVCaptureSession()
 
-    public init?(configuration: AppConfiguration = AppConfiguration(), fusionEngine: ImageFusionEngine? = nil) {}
+    public init(configuration: AppConfiguration = AppConfiguration(), fusionEngine: ImageFusionEngine? = nil) {}
 
     public var captureSession: AVCaptureSession {
         placeholderSession

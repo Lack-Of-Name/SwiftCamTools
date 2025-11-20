@@ -13,9 +13,8 @@ public final class CapturePipeline: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
-    public init?(configuration: AppConfiguration = AppConfiguration()) {
-        guard let controller = CameraController(configuration: configuration) else { return nil }
-        self.controller = controller
+    public init(configuration: AppConfiguration = AppConfiguration()) {
+        self.controller = CameraController(configuration: configuration)
     }
 
     public func start() {

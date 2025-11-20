@@ -7,11 +7,8 @@ public final class CapturePipeline {
     public let exposureQueue: ExposureQueue = ExposureQueue()
     public var histogram: HistogramModel = HistogramModel(samples: [])
 
-    public init?(configuration: AppConfiguration = AppConfiguration()) {
-        guard let controller = CameraController(configuration: configuration) else {
-            return nil
-        }
-        self.controller = controller
+    public init(configuration: AppConfiguration = AppConfiguration()) {
+        self.controller = CameraController(configuration: configuration)
     }
 
     public func start() {}

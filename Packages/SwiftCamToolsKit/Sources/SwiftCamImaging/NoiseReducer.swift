@@ -23,4 +23,12 @@ public final class AdaptiveNoiseReducer: NoiseReducer {
         return MTIImage(cvPixelBuffer: pixelBuffer, alphaType: .alphaIsOne)
     }
 }
+
+public final class PassthroughNoiseReducer: NoiseReducer {
+    public init() {}
+
+    public func reduceNoise(pixelBuffer: CVPixelBuffer, level: Float) -> MTIImage? {
+        return MTIImage(cvPixelBuffer: pixelBuffer, alphaType: .alphaIsOne)
+    }
+}
 #endif

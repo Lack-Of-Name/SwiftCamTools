@@ -57,10 +57,16 @@ private struct ShutterButton: View {
 
     var body: some View {
         Button(action: action) {
-            Circle()
-                .fill(Color.white.opacity(0.15))
-                .frame(width: 74, height: 74)
-                .overlay(Circle().stroke(Color.white, lineWidth: 4))
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.15))
+                    .frame(width: 84, height: 84)
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: 72, height: 72)
+            }
+            .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 3))
+            .shadow(color: Color.white.opacity(0.35), radius: 6, x: 0, y: 2)
         }
         .buttonStyle(.plain)
     }
