@@ -39,7 +39,7 @@ public final class CapturePipeline: ObservableObject {
         histogramThrottleNanoseconds = UInt64(max(20, milliseconds) * 1_000_000)
     }
 
-    public func updateVideoOrientation(_ orientation: AVCaptureVideoOrientation) {
+    public func updateVideoOrientation(_ orientation: CameraOrientation) {
         controller.updateVideoOrientation(orientation)
     }
 

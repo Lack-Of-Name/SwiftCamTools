@@ -28,7 +28,7 @@ public final class CameraController: NSObject, ObservableObject {
     private let configuration: AppConfiguration
     private let logger = Logger(subsystem: "SwiftCamTools", category: "CameraController")
     private var currentPreviewQuality: PreviewQuality = .fullResolution
-    private var currentOrientation: AVCaptureVideoOrientation = .portrait
+    private var currentOrientation: CameraOrientation = .portrait
 
     @Published public private(set) var state: PipelineState = .idle
     @Published public private(set) var lastExposure: ExposureSettings = ExposureSettings()
@@ -160,7 +160,7 @@ public final class CameraController: NSObject, ObservableObject {
         }
     }
 
-    public func updateVideoOrientation(_ orientation: AVCaptureVideoOrientation) {
+    public func updateVideoOrientation(_ orientation: CameraOrientation) {
         currentOrientation = orientation
         sessionQueue.async {
             if let connection = self.videoOutput.connection(with: .video) {
@@ -279,14 +279,14 @@ extension CameraController {
         logger.warning("Overexposure detected (offset: \(offset, privacy: .public)). Applying fallback ISO \(adjustedISO, privacy: .public) and duration \(adjustedDurationSeconds, privacy: .public)s")
     }
 
-    private func apply(_ orientation: AVCaptureVideoOrientation, to connection: AVCaptureConnection) {
+    private func apply(_ orientation: CameraOrientation, to connection: AVCaptureConnection) {
         if #available(iOS 17.0, *) {
             let angle = orientation.rotationAngle
             if connection.isVideoRotationAngleSupported(angle) {
                 connection.videoRotationAngle = angle
             }
         } else if connection.isVideoOrientationSupported {
-            connection.videoOrientation = orientation
+            connection.videoOrientation = orientation.legacyAVOrientation
         }
     }
 }

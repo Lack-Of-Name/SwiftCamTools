@@ -3,9 +3,10 @@ import UIKit
 import AVFoundation
 import SwiftUI
 import Foundation
+import SwiftCamCore
 
 extension UIDeviceOrientation {
-    var captureVideoOrientation: AVCaptureVideoOrientation? {
+    var cameraOrientation: CameraOrientation? {
         switch self {
         case .portrait: return .portrait
         case .portraitUpsideDown: return .portraitUpsideDown

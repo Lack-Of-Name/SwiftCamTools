@@ -73,7 +73,7 @@ final class CameraServiceBridge: ObservableObject {
         pipeline.controller.performWhiteoutRecovery(reason: reason, revertToAutoExposure: revertToAutoExposure)
     }
 
-    func updateVideoOrientation(_ orientation: AVCaptureVideoOrientation) {
+    func updateVideoOrientation(_ orientation: CameraOrientation) {
         pipeline.updateVideoOrientation(orientation)
     }
 }

@@ -6,7 +6,7 @@ import SwiftCamCore
 
 struct CameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession?
-    let orientation: AVCaptureVideoOrientation
+    let orientation: CameraOrientation
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
@@ -35,7 +35,7 @@ final class PreviewView: UIView {
         }
     }
 
-    func setVideoOrientation(_ orientation: AVCaptureVideoOrientation) {
+    func setVideoOrientation(_ orientation: CameraOrientation) {
         guard let connection = previewLayer.connection else { return }
         if #available(iOS 17.0, *) {
             let angle = orientation.rotationAngle
@@ -43,7 +43,7 @@ final class PreviewView: UIView {
                 connection.videoRotationAngle = angle
             }
         } else if connection.isVideoOrientationSupported {
-            connection.videoOrientation = orientation
+            connection.videoOrientation = orientation.legacyAVOrientation
         }
     }
 }

@@ -33,7 +33,7 @@ final class CameraViewModel: ObservableObject {
     @Published var exposureWarning: String?
     @Published var countdownMode: CaptureCountdown = .off
     @Published var countdownSecondsRemaining: Int?
-    @Published var previewOrientation: AVCaptureVideoOrientation = .portrait
+    @Published var previewOrientation: CameraOrientation = .portrait
 
     var session: AVCaptureSession? { service.session }
 
@@ -135,10 +135,10 @@ final class CameraViewModel: ObservableObject {
 
     func updateDeviceOrientation(_ orientation: UIDeviceOrientation) {
 #if canImport(UIKit)
-        guard let videoOrientation = orientation.captureVideoOrientation else { return }
-        guard videoOrientation != previewOrientation else { return }
-        previewOrientation = videoOrientation
-        service.updateVideoOrientation(videoOrientation)
+        guard let cameraOrientation = orientation.cameraOrientation else { return }
+        guard cameraOrientation != previewOrientation else { return }
+        previewOrientation = cameraOrientation
+        service.updateVideoOrientation(cameraOrientation)
 #endif
     }
 
@@ -261,38 +261,50 @@ final class CameraViewModel: ObservableObject {
         }
         countdownSecondsRemaining = duration
         generateCountdownFeedback()
-        countdownTask?.cancel()
-        countdownTask = Task { [weak self] in
-            while !(Task.isCancelled) {
-                try await Task.sleep(nanoseconds: 1_000_000_000)
-                await MainActor.run {
-                    guard let self else { return }
-                    guard let remaining = self.countdownSecondsRemaining else {
-                        self.countdownTask?.cancel()
-                        self.countdownTask = nil
-                        return
-                    }
-                    if remaining <= 1 {
-                        self.countdownSecondsRemaining = nil
-                        self.countdownTask?.cancel()
-                        self.countdownTask = nil
-                        self.performCaptureNow()
-                    } else {
-                        self.countdownSecondsRemaining = remaining - 1
-                        self.generateCountdownFeedback()
-                    }
-                }
-            }
+        cancelCountdownTask()
+        countdownTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.runCountdownLoop()
         }
     }
 
     private func cancelCountdown(resetMode: Bool = false) {
-        countdownTask?.cancel()
-        countdownTask = nil
+        cancelCountdownTask()
         countdownSecondsRemaining = nil
         if resetMode && mode != .longExposure {
             countdownMode = .off
         }
+    }
+
+    @MainActor
+    private func runCountdownLoop() async {
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: 1_000_000_000)
+            } catch {
+                break
+            }
+
+            guard let remaining = countdownSecondsRemaining else {
+                cancelCountdownTask()
+                return
+            }
+
+            if remaining <= 1 {
+                countdownSecondsRemaining = nil
+                cancelCountdownTask()
+                performCaptureNow()
+                return
+            } else {
+                countdownSecondsRemaining = remaining - 1
+                generateCountdownFeedback()
+            }
+        }
+    }
+
+    private func cancelCountdownTask() {
+        countdownTask?.cancel()
+        countdownTask = nil
     }
 
     private func generateCountdownFeedback() {
@@ -300,6 +312,10 @@ final class CameraViewModel: ObservableObject {
         let generator = UINotificationFeedbackGenerator()
         generator.notificationOccurred(.success)
 #endif
+    }
+
+    deinit {
+        countdownTask?.cancel()
     }
 }
 #endif
@@ -325,11 +341,3 @@ private enum PerformanceProfile {
     case full
     case constrained
 }
-
-#if canImport(SwiftUI) && canImport(AVFoundation) && canImport(Combine)
-extension CameraViewModel {
-    deinit {
-        countdownTask?.cancel()
-    }
-}
-#endif
