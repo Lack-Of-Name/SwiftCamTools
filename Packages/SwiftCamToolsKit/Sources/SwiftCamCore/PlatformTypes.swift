@@ -1,5 +1,8 @@
 #if canImport(CoreVideo)
 import CoreVideo
+#if compiler(>=5.9)
+extension CVPixelBuffer: @unchecked Sendable {}
+#endif
 #else
 public typealias CVPixelBuffer = AnyObject
 

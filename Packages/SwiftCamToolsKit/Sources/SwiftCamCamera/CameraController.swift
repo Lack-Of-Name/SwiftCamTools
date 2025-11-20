@@ -70,8 +70,8 @@ public final class CameraController: NSObject, ObservableObject {
                 }
                 if self.session.canAddOutput(self.photoOutput) {
                     self.session.addOutput(self.photoOutput)
-                    if let connection = self.photoOutput.connection(with: .video), connection.isVideoOrientationSupported {
-                        connection.videoOrientation = self.currentOrientation
+                    if let connection = self.photoOutput.connection(with: .video) {
+                        self.apply(self.currentOrientation, to: connection)
                     }
                 }
                 if self.session.canAddOutput(self.videoOutput) {
@@ -79,8 +79,8 @@ public final class CameraController: NSObject, ObservableObject {
                     self.videoOutput.setSampleBufferDelegate(self, queue: self.sessionQueue)
                     self.videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
                     self.session.addOutput(self.videoOutput)
-                    if let connection = self.videoOutput.connection(with: .video), connection.isVideoOrientationSupported {
-                        connection.videoOrientation = self.currentOrientation
+                    if let connection = self.videoOutput.connection(with: .video) {
+                        self.apply(self.currentOrientation, to: connection)
                     }
                 }
                 if #available(iOS 16.0, *) {
@@ -129,8 +129,8 @@ public final class CameraController: NSObject, ObservableObject {
             default:
                 photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
             }
-            if let connection = self.photoOutput.connection(with: .video), connection.isVideoOrientationSupported {
-                connection.videoOrientation = self.currentOrientation
+            if let connection = self.photoOutput.connection(with: .video) {
+                self.apply(self.currentOrientation, to: connection)
             }
             self.photoOutput.capturePhoto(with: photoSettings, delegate: self)
             self.state = .capturing
@@ -163,11 +163,11 @@ public final class CameraController: NSObject, ObservableObject {
     public func updateVideoOrientation(_ orientation: AVCaptureVideoOrientation) {
         currentOrientation = orientation
         sessionQueue.async {
-            if let connection = self.videoOutput.connection(with: .video), connection.isVideoOrientationSupported {
-                connection.videoOrientation = orientation
+            if let connection = self.videoOutput.connection(with: .video) {
+                self.apply(orientation, to: connection)
             }
-            if let connection = self.photoOutput.connection(with: .video), connection.isVideoOrientationSupported {
-                connection.videoOrientation = orientation
+            if let connection = self.photoOutput.connection(with: .video) {
+                self.apply(orientation, to: connection)
             }
         }
     }
@@ -259,7 +259,7 @@ extension CameraController {
         let currentDuration = max(0.0001, CMTimeGetSeconds(device.exposureDuration))
         let durationRatio = currentDuration / max(0.0001, targetDuration)
         let exposureTargetOffset = device.exposureTargetOffset
-        let exposureCompensation = pow(2.0, -exposureTargetOffset)
+        let exposureCompensation = pow(2.0, -Double(exposureTargetOffset))
         let computedISO = Float(Double(currentISO) * Double(durationRatio) * exposureCompensation)
         return max(minISO, min(computedISO, maxISO))
     }
@@ -277,6 +277,17 @@ extension CameraController {
         let duration = CMTimeMakeWithSeconds(adjustedDurationSeconds, preferredTimescale: 1_000_000_000)
         device.setExposureModeCustom(duration: duration, iso: adjustedISO, completionHandler: nil)
         logger.warning("Overexposure detected (offset: \(offset, privacy: .public)). Applying fallback ISO \(adjustedISO, privacy: .public) and duration \(adjustedDurationSeconds, privacy: .public)s")
+    }
+
+    private func apply(_ orientation: AVCaptureVideoOrientation, to connection: AVCaptureConnection) {
+        if #available(iOS 17.0, *) {
+            let angle = orientation.rotationAngle
+            if connection.isVideoRotationAngleSupported(angle) {
+                connection.videoRotationAngle = angle
+            }
+        } else if connection.isVideoOrientationSupported {
+            connection.videoOrientation = orientation
+        }
     }
 }
 #endif
