@@ -19,6 +19,7 @@ public final class CapturePipeline: ObservableObject {
     private var histogramThrottleNanoseconds: UInt64 = 80_000_000
     private var lastFrameTimestamp: Double = 0
     private var fpsSamples: [Double] = []
+    private var isHistogramEnabled = true
 
     public init(configuration: AppConfiguration = AppConfiguration()) {
         self.controller = CameraController(configuration: configuration)
@@ -39,12 +40,17 @@ public final class CapturePipeline: ObservableObject {
         histogramThrottleNanoseconds = UInt64(max(20, milliseconds) * 1_000_000)
     }
 
+    public func setHistogramEnabled(_ enabled: Bool) {
+        isHistogramEnabled = enabled
+    }
+
     public func updateVideoOrientation(_ orientation: CameraOrientation) {
         controller.updateVideoOrientation(orientation)
     }
 
     private func handleSampleBuffer(_ sampleBuffer: CMSampleBuffer) {
         updateFrameRate(with: sampleBuffer)
+        guard isHistogramEnabled else { return }
         guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         throttledHistogramUpdate(with: buffer)
     }

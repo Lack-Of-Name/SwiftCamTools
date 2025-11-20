@@ -76,5 +76,9 @@ final class CameraServiceBridge: ObservableObject {
     func updateVideoOrientation(_ orientation: CameraOrientation) {
         pipeline.updateVideoOrientation(orientation)
     }
+
+    func setHistogramEnabled(_ enabled: Bool) {
+        pipeline.setHistogramEnabled(enabled)
+    }
 }
 #endif

@@ -45,9 +45,12 @@ final class CameraViewModel: ObservableObject {
     private var performanceProfile: PerformanceProfile = .full
     private var safetyLimits: ExposureSafetyLimits = ExposureSafetyLimits.forMode(.auto)
     private var countdownTask: Task<Void, Never>?
+    private let previewStabilizationEnabled = false
+    private let previewDiagnosticsEnabled = false
 
     init() {
         service.delegate = self
+        service.setHistogramEnabled(previewDiagnosticsEnabled)
         applyPreset(for: mode)
     }
 
@@ -177,7 +180,7 @@ final class CameraViewModel: ObservableObject {
             self.service.applyPreview(settings: previewSettings)
         }
         exposureUpdateWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(120), execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(60), execute: workItem)
     }
 
     private func handleExposureDiagnostics(with histogram: HistogramModel) {
@@ -221,6 +224,10 @@ final class CameraViewModel: ObservableObject {
 
     private func applyPerformanceState(_ state: CameraPerformanceState) {
         frameRate = state.frameRate
+        guard previewStabilizationEnabled else {
+            isPerformanceConstrained = false
+            return
+        }
         let desiredProfile: PerformanceProfile = state.isConstrained ? .constrained : .full
         guard desiredProfile != performanceProfile else { return }
         performanceProfile = desiredProfile
@@ -315,10 +322,11 @@ final class CameraViewModel: ObservableObject {
 #endif
     }
 
-    private func makePreviewSettings(from settings: ExposureSettings) -> ExposureSettings {
-        var preview = settings
-        preview.duration = safetyLimits.clampPreview(duration: preview.duration)
+    private func makePreviewSettings(from _: ExposureSettings) -> ExposureSettings {
+        var preview = ExposureSettings()
+        preview.duration = safetyLimits.clampPreview(duration: secondsToDuration(1.0 / 60.0))
         preview.autoISO = true
+        preview.iso = safetyLimits.minISO
         return preview
     }
 
