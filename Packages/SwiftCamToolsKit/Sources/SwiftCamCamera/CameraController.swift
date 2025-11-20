@@ -126,7 +126,6 @@ public final class CameraController: NSObject, ObservableObject {
             }
 
             let photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
-            photoSettings.isAutoStillImageStabilizationEnabled = true
             if let connection = self.photoOutput.connection(with: .video) {
                 self.apply(self.currentOrientation, to: connection)
             }
@@ -355,12 +354,27 @@ extension CameraController {
             if connection.isVideoStabilizationSupported {
                 connection.preferredVideoStabilizationMode = .off
             }
-            if connection.isVideoMinFrameDurationSupported {
-                connection.videoMinFrameDuration = CMTimeMake(value: 1, timescale: 24)
-            }
-            if connection.isVideoMaxFrameDurationSupported {
-                connection.videoMaxFrameDuration = CMTimeMake(value: 1, timescale: 24)
-            }
+        }
+        self.applyLowPowerFrameRateCap()
+    }
+
+    private func applyLowPowerFrameRateCap() {
+        guard let device = captureDevice else { return }
+        let targetFPS: Double = 24.0
+        let supportsTargetFPS = device.activeFormat.videoSupportedFrameRateRanges.contains { range in
+            let minFPS = Double(range.minFrameRate)
+            let maxFPS = Double(range.maxFrameRate)
+            return targetFPS >= minFPS && targetFPS <= maxFPS
+        }
+        guard supportsTargetFPS else { return }
+        let duration = CMTimeMake(value: 1, timescale: Int32(targetFPS))
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            device.activeVideoMinFrameDuration = duration
+            device.activeVideoMaxFrameDuration = duration
+        } catch {
+            logger.error("Unable to cap preview FPS: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

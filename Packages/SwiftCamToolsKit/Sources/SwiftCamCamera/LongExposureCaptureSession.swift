@@ -58,7 +58,7 @@ final class LongExposureCaptureSession {
                 "inputGVector": gVector,
                 "inputBVector": bVector,
                 "inputAVector": aVector,
-                "inputBiasVector": CIVector.zero
+                "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
             ])
         }
 
@@ -93,8 +93,8 @@ final class LongExposureCaptureSession {
         guard settings.noiseReductionLevel > 0 else { return image }
         let noiseLevel = Double(settings.noiseReductionLevel) * 0.02
         return image.applyingFilter("CINoiseReduction", parameters: [
-            kCIInputNoiseLevelKey: noiseLevel,
-            kCIInputSharpnessKey: 0.35
+            "inputNoiseLevel": noiseLevel,
+            "inputSharpness": 0.35
         ])
     }
 
@@ -109,13 +109,14 @@ final class LongExposureCaptureSession {
     private func render(image: CIImage) -> Data? {
         guard let cgImage = context.createCGImage(image, from: image.extent) else { return nil }
         let data = NSMutableData()
-        let uti: CFString
-        if #available(iOS 11.0, macOS 10.13, *) {
-            uti = AVFileType.heic as CFString
-        } else {
-            uti = AVFileType.jpeg as CFString
-        }
-        guard let destination = CGImageDestinationCreateWithData(data, uti, 1, nil) ?? CGImageDestinationCreateWithData(data, AVFileType.jpeg as CFString, 1, nil) else {
+        let heicUTI: CFString? = {
+            if #available(iOS 11.0, macOS 10.13, *) {
+                return AVFileType.heic as CFString
+            }
+            return nil
+        }()
+        let jpegUTI: CFString = "public.jpeg" as CFString
+        guard let destination = CGImageDestinationCreateWithData(data, heicUTI ?? jpegUTI, 1, nil) ?? CGImageDestinationCreateWithData(data, jpegUTI, 1, nil) else {
             return nil
         }
         let options = [kCGImageDestinationLossyCompressionQuality as String: 0.92] as CFDictionary
