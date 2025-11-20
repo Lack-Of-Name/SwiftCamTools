@@ -19,7 +19,11 @@ struct CameraBottomBar: View {
 
                 Spacer()
 
-                ShutterButton(action: captureAction, isCapturing: viewModel.isCapturing)
+                ShutterButton(
+                    action: captureAction,
+                    isCapturing: viewModel.isCapturing,
+                    isCountdownActive: viewModel.countdownSecondsRemaining != nil
+                )
 
                 Spacer()
 
@@ -58,10 +62,11 @@ private struct ModeSelector: View {
 private struct ShutterButton: View {
     var action: () -> Void
     var isCapturing: Bool
+    var isCountdownActive: Bool
 
     var body: some View {
         Button(action: {
-            guard !isCapturing else { return }
+            guard !isCapturing, !isCountdownActive else { return }
             action()
         }) {
             ZStack {
@@ -78,13 +83,19 @@ private struct ShutterButton: View {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: .red))
                         .scaleEffect(1.2)
+                } else if isCountdownActive {
+                    Image(systemName: "timer")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(.black.opacity(0.8))
                 }
             }
             .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 3))
             .shadow(color: Color.white.opacity(0.35), radius: 6, x: 0, y: 2)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isCapturing ? "Capturing photo" : "Shutter")
+        .accessibilityLabel(
+            isCapturing ? "Capturing photo" : (isCountdownActive ? "Countdown running" : "Shutter")
+        )
     }
 }
 

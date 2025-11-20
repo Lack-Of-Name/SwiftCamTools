@@ -4,7 +4,6 @@ import SwiftUI
 struct CameraTopBar: View {
     @ObservedObject var viewModel: CameraViewModel
     @State private var flashEnabled = false
-    @State private var timerMode: TimerMode = .off
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -13,9 +12,12 @@ struct CameraTopBar: View {
                     flashEnabled.toggle()
                 }
 
-                TopBarButton(symbol: timerMode.icon) {
-                    timerMode = timerMode.next()
+                TopBarButton(symbol: viewModel.countdownMode.iconName) {
+                    guard viewModel.mode == .longExposure else { return }
+                    viewModel.cycleCountdownMode()
                 }
+                .opacity(viewModel.mode == .longExposure ? 1 : 0.35)
+                .disabled(viewModel.mode != .longExposure)
 
                 Spacer()
 
@@ -24,8 +26,36 @@ struct CameraTopBar: View {
                 }
             }
 
-            HistogramView(histogram: viewModel.histogram)
-                .frame(height: 60)
+            VStack(alignment: .leading, spacing: 4) {
+                if viewModel.isPerformanceConstrained {
+                    Label {
+                        Text("Stabilizing preview…")
+                    } icon: {
+                        Image(systemName: "tortoise.fill")
+                    }
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.orange.opacity(0.25), in: Capsule())
+                    .foregroundStyle(.white)
+                }
+
+                if let exposureWarning = viewModel.exposureWarning {
+                    Label {
+                        Text(exposureWarning)
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle")
+                    }
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Color.red.opacity(0.3), in: Capsule())
+                    .foregroundStyle(.white)
+                }
+
+                HistogramView(histogram: viewModel.histogram)
+                    .frame(height: 60)
+            }
         }
         .padding(.horizontal, 24)
         .padding(.top, 20)
@@ -45,28 +75,6 @@ private struct TopBarButton: View {
                 .background(Color.black.opacity(0.35), in: Circle())
         }
         .buttonStyle(.plain)
-    }
-}
-
-private enum TimerMode: String, CaseIterable {
-    case off
-    case three
-    case ten
-
-    var icon: String {
-        switch self {
-        case .off: return "clock"
-        case .three: return "clock.badge.exclamationmark"
-        case .ten: return "clock.fill"
-        }
-    }
-
-    func next() -> TimerMode {
-        switch self {
-        case .off: return .three
-        case .three: return .ten
-        case .ten: return .off
-        }
     }
 }
 #endif

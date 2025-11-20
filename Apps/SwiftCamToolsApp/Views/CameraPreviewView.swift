@@ -5,17 +5,22 @@ import UIKit
 
 struct CameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession?
+    let orientation: AVCaptureVideoOrientation
 
     func makeUIView(context: Context) -> PreviewView {
-        PreviewView()
+        let view = PreviewView()
+        view.setVideoOrientation(orientation)
+        return view
     }
 
     func updateUIView(_ uiView: PreviewView, context: Context) {
         uiView.session = session
+        uiView.setVideoOrientation(orientation)
     }
 }
 #endif
 
+#if canImport(UIKit) && canImport(AVFoundation)
 final class PreviewView: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
 
@@ -28,4 +33,10 @@ final class PreviewView: UIView {
             previewLayer.session = newValue
         }
     }
+
+    func setVideoOrientation(_ orientation: AVCaptureVideoOrientation) {
+        guard let connection = previewLayer.connection, connection.isVideoOrientationSupported else { return }
+        connection.videoOrientation = orientation
+    }
 }
+#endif

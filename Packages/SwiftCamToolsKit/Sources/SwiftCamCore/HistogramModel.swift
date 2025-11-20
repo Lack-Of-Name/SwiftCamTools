@@ -24,4 +24,14 @@ public struct HistogramModel {
             HistogramBin(value: minValue + (Double(key) * width), frequency: Double(values.count) / Double(samples.count))
         }
     }
+
+    public var highlightRatio: Double {
+        guard !bins.isEmpty else { return 0 }
+        return bins.filter { $0.value >= 0.85 }.reduce(0) { $0 + $1.frequency }
+    }
+
+    public var shadowRatio: Double {
+        guard !bins.isEmpty else { return 0 }
+        return bins.filter { $0.value <= 0.1 }.reduce(0) { $0 + $1.frequency }
+    }
 }
