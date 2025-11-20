@@ -22,6 +22,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     private let service = CameraServiceBridge()
+    private let photoSaver = PhotoSaver()
 
     init() {
         applyPreset(for: mode)
@@ -34,11 +35,32 @@ final class CameraViewModel: ObservableObject {
     func capture() {
         service.capture(mode: mode, settings: settings) { [weak self] result in
             guard let self else { return }
-            switch result {
-            case .success(let photo):
-                if let buffer = photo.pixelBuffer {
-                    self.histogram = HistogramModel(samples: sampleLuma(from: buffer))
+            Task { @MainActor in
+                switch result {
+                case .success(let photo):
+                    self.handleCapturedPhoto(photo)
+                case .failure(let error):
+                    self.lastError = error
                 }
+            }
+        }
+    }
+
+    private func handleCapturedPhoto(_ photo: AVCapturePhoto) {
+        if let buffer = photo.previewPixelBuffer ?? photo.pixelBuffer {
+            histogram = HistogramModel(samples: sampleLuma(from: buffer))
+        }
+
+        guard let data = photo.fileDataRepresentation() else {
+            lastError = .captureFailed("Unable to read captured photo data.")
+            return
+        }
+
+        photoSaver.savePhotoData(data) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success:
+                break
             case .failure(let error):
                 self.lastError = error
             }
