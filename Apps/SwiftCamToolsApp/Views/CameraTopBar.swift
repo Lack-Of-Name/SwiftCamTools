@@ -13,11 +13,8 @@ struct CameraTopBar: View {
                 }
 
                 TopBarButton(symbol: viewModel.countdownMode.iconName) {
-                    guard viewModel.mode == .longExposure else { return }
                     viewModel.cycleCountdownMode()
                 }
-                .opacity(viewModel.mode == .longExposure ? 1 : 0.35)
-                .disabled(viewModel.mode != .longExposure)
 
                 Spacer()
 

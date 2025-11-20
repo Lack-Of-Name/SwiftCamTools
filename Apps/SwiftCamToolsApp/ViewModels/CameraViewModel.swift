@@ -14,14 +14,7 @@ typealias CameraPreviewImage = AnyObject
 
 @MainActor
 final class CameraViewModel: ObservableObject {
-    @Published var mode: CaptureMode = .longExposure {
-        didSet {
-            guard mode != oldValue else { return }
-            cancelCountdown(resetMode: true)
-            applyPreset(for: mode)
-        }
-    }
-    @Published var settings: ExposureSettings = ExposureSettings(iso: 1600, duration: 2_000_000_000, bracketOffsets: [-1, 0, 1])
+    @Published var settings: ExposureSettings = CameraViewModel.defaultSettings
     @Published var histogram: HistogramModel = HistogramModel(samples: [])
     @Published var frameRate: Double = 0
     @Published var lastError: CameraError?
@@ -37,13 +30,14 @@ final class CameraViewModel: ObservableObject {
 
     var session: AVCaptureSession? { service.session }
 
+    private static let defaultSettings = ExposureSettings(iso: 1600, duration: CMTimeValue(2_000_000_000), bracketOffsets: [], noiseReductionLevel: 0.7)
     private let service = CameraServiceBridge()
     private let photoSaver = PhotoSaver()
     private var exposureUpdateWorkItem: DispatchWorkItem?
     private var overExposureStrikes = 0
     private var histogramBackoffStrikes = 0
     private var performanceProfile: PerformanceProfile = .full
-    private var safetyLimits: ExposureSafetyLimits = ExposureSafetyLimits.forMode(.auto)
+    private var safetyLimits: ExposureSafetyLimits = .longExposureDefaults
     private var countdownTask: Task<Void, Never>?
     private let previewStabilizationEnabled = false
     private let previewDiagnosticsEnabled = false
@@ -51,11 +45,13 @@ final class CameraViewModel: ObservableObject {
     init() {
         service.delegate = self
         service.setHistogramEnabled(previewDiagnosticsEnabled)
-        applyPreset(for: mode)
+        schedulePreviewUpdate()
     }
 
     func prepareSession() async {
         await service.prepare()
+        service.configureLowPowerPreview()
+        refreshPreviewExposure()
     }
 
     var isCaptureLocked: Bool { isCapturing || countdownSecondsRemaining != nil }
@@ -63,7 +59,7 @@ final class CameraViewModel: ObservableObject {
     func capture() {
         guard !isCapturing else { return }
         guard countdownSecondsRemaining == nil else { return }
-        if mode == .longExposure, countdownMode.seconds > 0 {
+        if countdownMode.seconds > 0 {
             startCountdown()
         } else {
             performCaptureNow()
@@ -74,12 +70,7 @@ final class CameraViewModel: ObservableObject {
         countdownMode = countdownMode.next()
     }
 
-    private func handleCapturedPhoto(_ photo: AVCapturePhoto) {
-        guard let data = photo.fileDataRepresentation() else {
-            lastError = .captureFailed("Unable to read captured photo data.")
-            return
-        }
-
+    private func handleCapturedData(_ data: Data) {
 #if canImport(UIKit)
         if let image = UIImage(data: data) {
             lastCapturedPreview = image
@@ -126,7 +117,8 @@ final class CameraViewModel: ObservableObject {
     }
 
     func resetManualControls() {
-        applyPreset(for: mode)
+        settings = Self.defaultSettings
+        schedulePreviewUpdate()
     }
 
     func openMostRecentPhoto() {
@@ -143,20 +135,6 @@ final class CameraViewModel: ObservableObject {
         previewOrientation = cameraOrientation
         service.updateVideoOrientation(cameraOrientation)
 #endif
-    }
-
-    private func applyPreset(for mode: CaptureMode) {
-        switch mode {
-        case .auto:
-            settings = ExposureSettings(iso: 400, duration: secondsToDuration(0.02), bracketOffsets: [])
-        case .longExposure:
-            settings = ExposureSettings(iso: 1600, duration: secondsToDuration(2.0), bracketOffsets: [-1, 0, 1], noiseReductionLevel: 0.7)
-        case .bracketed:
-            settings = ExposureSettings(iso: 800, duration: secondsToDuration(0.5), bracketOffsets: [-2, 0, 2], noiseReductionLevel: 0.5)
-        case .raw:
-            settings = ExposureSettings(iso: 200, duration: secondsToDuration(0.125), bracketOffsets: [], noiseReductionLevel: 0.3)
-        }
-        safetyLimits = ExposureSafetyLimits.forMode(mode)
     }
 
     private func secondsToDuration(_ seconds: Double) -> CMTimeValue {
@@ -181,6 +159,11 @@ final class CameraViewModel: ObservableObject {
         }
         exposureUpdateWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(60), execute: workItem)
+    }
+
+    private func refreshPreviewExposure() {
+        let previewSettings = makePreviewSettings(from: settings)
+        service.applyPreview(settings: previewSettings)
     }
 
     private func handleExposureDiagnostics(with histogram: HistogramModel) {
@@ -246,16 +229,17 @@ final class CameraViewModel: ObservableObject {
     private func performCaptureNow() {
         cancelCountdown()
         isCapturing = true
-        service.capture(mode: mode, settings: settings) { [weak self] result in
+        service.capture(settings: settings) { [weak self] result in
             guard let self else { return }
             Task { @MainActor in
                 switch result {
-                case .success(let photo):
-                    self.handleCapturedPhoto(photo)
+                case .success(let data):
+                    self.handleCapturedData(data)
                 case .failure(let error):
                     self.lastError = error
                 }
                 self.isCapturing = false
+                self.refreshPreviewExposure()
             }
         }
     }
@@ -276,12 +260,9 @@ final class CameraViewModel: ObservableObject {
         }
     }
 
-    private func cancelCountdown(resetMode: Bool = false) {
+    private func cancelCountdown() {
         cancelCountdownTask()
         countdownSecondsRemaining = nil
-        if resetMode && mode != .longExposure {
-            countdownMode = .off
-        }
     }
 
     @MainActor

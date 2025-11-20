@@ -17,13 +17,18 @@ public final class CameraController {
 
     public init(configuration: AppConfiguration = AppConfiguration(), fusionEngine: ImageFusionEngine? = nil) {}
 
-    public var captureSession: AVCaptureSession {
-        placeholderSession
-    }
+    public var captureSession: AVCaptureSession { placeholderSession }
+    public var maxSupportedExposureSeconds: Double { 0 }
 
     public func configure() {}
 
-    public func capture(mode: CaptureMode, settings: ExposureSettings, completion: @escaping (Result<AVCapturePhoto, CameraError>) -> Void) {
+    public func configureLowPowerPreview() {}
+
+    public func capture(settings: ExposureSettings, completion: @escaping (Result<AVCapturePhoto, CameraError>) -> Void) {
+        completion(.failure(.configurationFailed("Camera capture is unavailable on this platform")))
+    }
+
+    public func captureLongExposure(durationSeconds: Double, settings: ExposureSettings, completion: @escaping (Result<Data, CameraError>) -> Void) {
         completion(.failure(.configurationFailed("Camera capture is unavailable on this platform")))
     }
 }

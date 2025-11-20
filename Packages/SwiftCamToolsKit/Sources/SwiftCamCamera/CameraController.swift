@@ -29,6 +29,10 @@ public final class CameraController: NSObject, ObservableObject {
     private let logger = Logger(subsystem: "SwiftCamTools", category: "CameraController")
     private var currentPreviewQuality: PreviewQuality = .fullResolution
     private var currentOrientation: CameraOrientation = .portrait
+    private var pendingLowPowerPreviewConfiguration = false
+    private var cachedMaxExposureDuration: Double = 0
+    private var longExposureSession: LongExposureCaptureSession?
+    private var longExposureCompletion: ((Result<Data, CameraError>) -> Void)?
 
     @Published public private(set) var state: PipelineState = .idle
     @Published public private(set) var lastExposure: ExposureSettings = ExposureSettings()
@@ -53,6 +57,10 @@ public final class CameraController: NSObject, ObservableObject {
         session
     }
 
+    public var maxSupportedExposureSeconds: Double {
+        cachedMaxExposureDuration
+    }
+
     public func configure() {
         sessionQueue.async {
             self.session.beginConfiguration()
@@ -64,6 +72,7 @@ public final class CameraController: NSObject, ObservableObject {
                     return
                 }
                 self.captureDevice = device
+                self.cachedMaxExposureDuration = CMTimeGetSeconds(device.activeFormat.maxExposureDuration)
                 let input = try AVCaptureDeviceInput(device: device)
                 if self.session.canAddInput(input) {
                     self.session.addInput(input)
@@ -88,6 +97,7 @@ public final class CameraController: NSObject, ObservableObject {
                 } else {
                     self.photoOutput.isHighResolutionCaptureEnabled = true
                 }
+                self.applyLowPowerPreviewConfigurationIfNeeded()
                 configurationDidSucceed = true
             } catch {
                 self.state = .error(.configurationFailed(error.localizedDescription))
@@ -105,7 +115,7 @@ public final class CameraController: NSObject, ObservableObject {
 
     private var captureCompletion: ((Result<AVCapturePhoto, CameraError>) -> Void)?
 
-    public func capture(mode: CaptureMode, settings: ExposureSettings, completion: @escaping (Result<AVCapturePhoto, CameraError>) -> Void) {
+    public func capture(settings: ExposureSettings, completion: @escaping (Result<AVCapturePhoto, CameraError>) -> Void) {
         lastExposure = settings
         captureCompletion = completion
         sessionQueue.async {
@@ -115,25 +125,46 @@ public final class CameraController: NSObject, ObservableObject {
                 return
             }
 
-            let photoSettings: AVCapturePhotoSettings
-            switch mode {
-            case .bracketed:
-                let bracketSettings: [AVCaptureBracketedStillImageSettings] = settings.bracketOffsets.map { offset in
-                    AVCaptureAutoExposureBracketedStillImageSettings.autoExposureSettings(exposureTargetBias: offset)
-                }
-                let bracket = AVCapturePhotoBracketSettings(rawPixelFormatType: 0, processedFormat: [AVVideoCodecKey: AVVideoCodecType.hevc], bracketedSettings: bracketSettings)
-                bracket.isLensStabilizationEnabled = true
-                photoSettings = bracket
-            case .raw:
-                photoSettings = AVCapturePhotoSettings(rawPixelFormatType: kCVPixelFormatType_14Bayer_RGGB)
-            default:
-                photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
-            }
+            let photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
+            photoSettings.isAutoStillImageStabilizationEnabled = true
             if let connection = self.photoOutput.connection(with: .video) {
                 self.apply(self.currentOrientation, to: connection)
             }
             self.photoOutput.capturePhoto(with: photoSettings, delegate: self)
             self.state = .capturing
+        }
+    }
+
+    public func captureLongExposure(durationSeconds: Double, settings: ExposureSettings, completion: @escaping (Result<Data, CameraError>) -> Void) {
+        sessionQueue.async {
+            guard self.longExposureCompletion == nil else {
+                DispatchQueue.main.async { completion(.failure(.captureFailed("Long exposure already in progress."))) }
+                return
+            }
+
+            self.lastExposure = settings
+            if let error = self.applyExposureSettings(settings, enableSubjectMonitoring: false) {
+                DispatchQueue.main.async { completion(.failure(error)) }
+                return
+            }
+
+            self.longExposureCompletion = completion
+            let frameBudget = max(12, Int(durationSeconds * 24.0))
+            self.longExposureSession = LongExposureCaptureSession(duration: durationSeconds, maxFrameCount: frameBudget, settings: settings) { [weak self] result in
+                guard let self else { return }
+                self.sessionQueue.async {
+                    self.longExposureSession = nil
+                    let handler = self.longExposureCompletion
+                    self.longExposureCompletion = nil
+                    DispatchQueue.main.async {
+                        self.state = .running
+                        handler?(result)
+                    }
+                }
+            }
+
+            self.scheduleLongExposureTimeout(after: durationSeconds + 0.35)
+            DispatchQueue.main.async { self.state = .capturing }
         }
     }
 
@@ -157,6 +188,14 @@ public final class CameraController: NSObject, ObservableObject {
                 }
             }
             self.session.commitConfiguration()
+        }
+    }
+
+    public func configureLowPowerPreview() {
+        pendingLowPowerPreviewConfiguration = true
+        currentPreviewQuality = .responsive
+        sessionQueue.async {
+            self.applyLowPowerPreviewConfigurationIfNeeded()
         }
     }
 
@@ -211,6 +250,7 @@ extension CameraController: AVCapturePhotoCaptureDelegate {
 
 extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
     public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        longExposureSession?.ingest(sampleBuffer)
         sampleBufferHandler?(sampleBuffer)
     }
 }
@@ -287,6 +327,40 @@ extension CameraController {
             }
         } else if connection.isVideoOrientationSupported {
             connection.videoOrientation = orientation.legacyAVOrientation
+        }
+    }
+
+    private func scheduleLongExposureTimeout(after delay: Double) {
+        guard delay > 0 else { return }
+        sessionQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.longExposureSession?.forceFinish()
+        }
+    }
+
+    private func applyLowPowerPreviewConfigurationIfNeeded() {
+        guard pendingLowPowerPreviewConfiguration else { return }
+        guard self.session.outputs.contains(where: { $0 === self.videoOutput }) else { return }
+        pendingLowPowerPreviewConfiguration = false
+        if self.session.canSetSessionPreset(.high) {
+            self.session.sessionPreset = .high
+        }
+        self.videoOutput.alwaysDiscardsLateVideoFrames = true
+        self.videoOutput.videoSettings = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+            kCVPixelBufferWidthKey as String: 960,
+            kCVPixelBufferHeightKey as String: 540
+        ]
+        if let connection = self.videoOutput.connection(with: .video) {
+            if connection.isVideoStabilizationSupported {
+                connection.preferredVideoStabilizationMode = .off
+            }
+            if connection.isVideoMinFrameDurationSupported {
+                connection.videoMinFrameDuration = CMTimeMake(value: 1, timescale: 24)
+            }
+            if connection.isVideoMaxFrameDurationSupported {
+                connection.videoMaxFrameDuration = CMTimeMake(value: 1, timescale: 24)
+            }
         }
     }
 }

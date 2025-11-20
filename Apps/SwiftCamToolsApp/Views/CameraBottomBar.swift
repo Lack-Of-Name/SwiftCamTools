@@ -1,6 +1,5 @@
 #if canImport(SwiftUI)
 import SwiftUI
-import SwiftCamCore
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -12,8 +11,6 @@ struct CameraBottomBar: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            ModeSelector(selectedMode: $viewModel.mode)
-
             HStack(alignment: .center) {
                 RecentPhotoButton(image: viewModel.lastCapturedPreview, action: viewModel.openMostRecentPhoto)
 
@@ -41,23 +38,6 @@ struct CameraBottomBar: View {
     }
 }
 #endif
-
-private struct ModeSelector: View {
-    @Binding var selectedMode: CaptureMode
-
-    var body: some View {
-        HStack(spacing: 16) {
-            ForEach(CaptureMode.allCases, id: \.self) { mode in
-                Button(action: { withAnimation(.easeInOut(duration: 0.15)) { selectedMode = mode } }) {
-                    Text(mode.displayName.uppercased())
-                        .font(.system(size: 14, weight: mode == selectedMode ? .semibold : .regular, design: .rounded))
-                        .foregroundStyle(mode == selectedMode ? .white : .gray)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-}
 
 private struct ShutterButton: View {
     var action: () -> Void

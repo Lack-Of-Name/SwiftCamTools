@@ -9,6 +9,7 @@ import SwiftCamCore
 public final class CapturePipeline: ObservableObject {
     public let controller: CameraController
     public let exposureQueue: ExposureQueue = ExposureQueue()
+    private let configuration: AppConfiguration
 
     @Published public private(set) var histogram: HistogramModel = HistogramModel(samples: [])
     @Published public private(set) var frameRate: Double = 0
@@ -22,6 +23,7 @@ public final class CapturePipeline: ObservableObject {
     private var isHistogramEnabled = true
 
     public init(configuration: AppConfiguration = AppConfiguration()) {
+        self.configuration = configuration
         self.controller = CameraController(configuration: configuration)
         self.controller.sampleBufferHandler = { [weak self] sampleBuffer in
             self?.handleSampleBuffer(sampleBuffer)
@@ -34,6 +36,33 @@ public final class CapturePipeline: ObservableObject {
 
     public func queue(_ settings: ExposureSettings) {
         exposureQueue.enqueue(settings)
+    }
+
+    public func capture(settings: ExposureSettings, completion: @escaping (Result<Data, CameraError>) -> Void) {
+        let requestedSeconds = max(0.0, Double(settings.duration) / 1_000_000_000.0)
+        let clampedSeconds = min(configuration.maxLongExposureSeconds, requestedSeconds)
+        var captureSettings = settings
+        if clampedSeconds != requestedSeconds {
+            captureSettings.duration = CMTimeValue(clampedSeconds * 1_000_000_000.0)
+        }
+
+        let hardwareLimit = controller.maxSupportedExposureSeconds
+        if clampedSeconds > hardwareLimit + 0.01 {
+            controller.captureLongExposure(durationSeconds: clampedSeconds, settings: captureSettings, completion: completion)
+        } else {
+            controller.capture(settings: captureSettings) { result in
+                switch result {
+                case .success(let photo):
+                    guard let data = photo.fileDataRepresentation() else {
+                        completion(.failure(.captureFailed("Unable to read captured photo data.")))
+                        return
+                    }
+                    completion(.success(data))
+                case .failure(let error):
+                    completion(.failure(error))
+                }
+            }
+        }
     }
 
     public func updateHistogramThrottle(interval milliseconds: Double) {

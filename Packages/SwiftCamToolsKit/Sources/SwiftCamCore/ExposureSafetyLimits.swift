@@ -16,58 +16,39 @@ public struct ExposureSafetyLimits {
     public let recoveryISO: Float
     public let recoveryShutterSeconds: Double
 
-    public static func forMode(_ mode: CaptureMode) -> ExposureSafetyLimits {
-        switch mode {
-        case .auto:
-            return ExposureSafetyLimits(
-                minISO: 80,
-                maxISO: 1600,
-                minShutterSeconds: 1.0 / 500.0,
-                maxShutterSeconds: 0.12,
-                previewMaxShutterSeconds: 1.0 / 60.0,
-                highlightRatioThreshold: 0.85,
-                recoveryFrameBudget: 3,
-                recoveryISO: 200,
-                recoveryShutterSeconds: 0.02
-            )
-        case .longExposure:
-            return ExposureSafetyLimits(
-                minISO: 80,
-                maxISO: 4800,
-                minShutterSeconds: 0.1,
-                maxShutterSeconds: 10.0,
-                previewMaxShutterSeconds: 0.08,
-                highlightRatioThreshold: 0.88,
-                recoveryFrameBudget: 4,
-                recoveryISO: 400,
-                recoveryShutterSeconds: 0.5
-            )
-        case .bracketed:
-            return ExposureSafetyLimits(
-                minISO: 80,
-                maxISO: 2000,
-                minShutterSeconds: 1.0 / 125.0,
-                maxShutterSeconds: 0.75,
-                previewMaxShutterSeconds: 1.0 / 45.0,
-                highlightRatioThreshold: 0.86,
-                recoveryFrameBudget: 3,
-                recoveryISO: 250,
-                recoveryShutterSeconds: 0.04
-            )
-        case .raw:
-            return ExposureSafetyLimits(
-                minISO: 64,
-                maxISO: 1600,
-                minShutterSeconds: 1.0 / 250.0,
-                maxShutterSeconds: 0.5,
-                previewMaxShutterSeconds: 1.0 / 60.0,
-                highlightRatioThreshold: 0.85,
-                recoveryFrameBudget: 3,
-                recoveryISO: 160,
-                recoveryShutterSeconds: 0.02
-            )
-        }
+    public init(
+        minISO: Float,
+        maxISO: Float,
+        minShutterSeconds: Double,
+        maxShutterSeconds: Double,
+        previewMaxShutterSeconds: Double,
+        highlightRatioThreshold: Double,
+        recoveryFrameBudget: Int,
+        recoveryISO: Float,
+        recoveryShutterSeconds: Double
+    ) {
+        self.minISO = minISO
+        self.maxISO = maxISO
+        self.minShutterSeconds = minShutterSeconds
+        self.maxShutterSeconds = maxShutterSeconds
+        self.previewMaxShutterSeconds = previewMaxShutterSeconds
+        self.highlightRatioThreshold = highlightRatioThreshold
+        self.recoveryFrameBudget = recoveryFrameBudget
+        self.recoveryISO = recoveryISO
+        self.recoveryShutterSeconds = recoveryShutterSeconds
     }
+
+    public static let longExposureDefaults = ExposureSafetyLimits(
+        minISO: 80,
+        maxISO: 4800,
+        minShutterSeconds: 0.1,
+        maxShutterSeconds: 10.0,
+        previewMaxShutterSeconds: 0.08,
+        highlightRatioThreshold: 0.88,
+        recoveryFrameBudget: 4,
+        recoveryISO: 400,
+        recoveryShutterSeconds: 0.5
+    )
 
     public func clamp(iso value: Float) -> Float {
         max(minISO, min(value, maxISO))

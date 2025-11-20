@@ -18,5 +18,9 @@ public final class CapturePipeline {
     }
 
     public func updateHistogram(with buffer: CVPixelBuffer) {}
+
+    public func capture(settings: ExposureSettings, completion: @escaping (Result<Data, CameraError>) -> Void) {
+        completion(.failure(.configurationFailed("Camera capture is unavailable on this platform")))
+    }
 }
 #endif

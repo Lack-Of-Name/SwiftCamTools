@@ -53,8 +53,8 @@ final class CameraServiceBridge: ObservableObject {
         pipeline.start()
     }
 
-    func capture(mode: CaptureMode, settings: ExposureSettings, completion: @escaping (Result<AVCapturePhoto, CameraError>) -> Void) {
-        pipeline.controller.capture(mode: mode, settings: settings, completion: completion)
+    func capture(settings: ExposureSettings, completion: @escaping (Result<Data, CameraError>) -> Void) {
+        pipeline.capture(settings: settings, completion: completion)
     }
 
     func applyPreview(settings: ExposureSettings) {
@@ -79,6 +79,12 @@ final class CameraServiceBridge: ObservableObject {
 
     func setHistogramEnabled(_ enabled: Bool) {
         pipeline.setHistogramEnabled(enabled)
+    }
+
+    func configureLowPowerPreview() {
+        pipeline.controller.configureLowPowerPreview()
+        pipeline.setHistogramEnabled(false)
+        pipeline.updateHistogramThrottle(interval: 260)
     }
 }
 #endif
