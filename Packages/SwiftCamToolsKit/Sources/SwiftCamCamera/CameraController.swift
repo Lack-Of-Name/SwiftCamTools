@@ -40,7 +40,7 @@ public final class CameraController: NSObject, ObservableObject {
     public func configure() {
         sessionQueue.async {
             self.session.beginConfiguration()
-            defer { self.session.commitConfiguration() }
+            var configurationDidSucceed = false
             do {
                 self.session.inputs.forEach { self.session.removeInput($0) }
                 guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
@@ -59,11 +59,18 @@ public final class CameraController: NSObject, ObservableObject {
                 } else {
                     self.photoOutput.isHighResolutionCaptureEnabled = true
                 }
-                self.state = .running
-                self.session.startRunning()
+                configurationDidSucceed = true
             } catch {
                 self.state = .error(.configurationFailed(error.localizedDescription))
             }
+            self.session.commitConfiguration()
+
+            guard configurationDidSucceed else { return }
+
+            if !self.session.isRunning {
+                self.session.startRunning()
+            }
+            self.state = .running
         }
     }
 
