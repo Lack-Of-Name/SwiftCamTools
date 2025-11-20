@@ -16,6 +16,7 @@ public final class CameraController: NSObject, ObservableObject {
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "SwiftCamTools.CameraController")
     private var photoOutput = AVCapturePhotoOutput()
+    private var captureDevice: AVCaptureDevice?
     private let fusionEngine: ImageFusionEngine
     private let configuration: AppConfiguration
 
@@ -50,6 +51,7 @@ public final class CameraController: NSObject, ObservableObject {
                     self.state = .error(.configurationFailed("No back camera"))
                     return
                 }
+                self.captureDevice = device
                 let input = try AVCaptureDeviceInput(device: device)
                 if self.session.canAddInput(input) {
                     self.session.addInput(input)
@@ -83,6 +85,12 @@ public final class CameraController: NSObject, ObservableObject {
         lastExposure = settings
         captureCompletion = completion
         sessionQueue.async {
+            if let error = self.applyExposureSettings(settings) {
+                DispatchQueue.main.async { self.state = .error(error) }
+                self.captureCompletion?(.failure(error))
+                return
+            }
+
             let photoSettings: AVCapturePhotoSettings
             switch mode {
             case .bracketed:
@@ -101,6 +109,10 @@ public final class CameraController: NSObject, ObservableObject {
             self.state = .capturing
         }
     }
+
+    public func applyPreviewExposure(settings: ExposureSettings) {
+        sessionQueue.async { _ = self.applyExposureSettings(settings) }
+    }
 }
 
 extension CameraController: AVCapturePhotoCaptureDelegate {
@@ -112,6 +124,34 @@ extension CameraController: AVCapturePhotoCaptureDelegate {
         }
         DispatchQueue.main.async { self.state = .running }
         captureCompletion?(.success(photo))
+    }
+}
+
+extension CameraController {
+    private func applyExposureSettings(_ settings: ExposureSettings) -> CameraError? {
+        guard let device = captureDevice else { return nil }
+        guard device.isExposureModeSupported(.custom) else { return .configurationFailed("Custom exposure not supported on this device.") }
+
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+
+            let minISO = device.activeFormat.minISO
+            let maxISO = device.activeFormat.maxISO
+            let clampedISO = max(minISO, min(Float(settings.iso), maxISO))
+
+            let minDurationSeconds = CMTimeGetSeconds(device.activeFormat.minExposureDuration)
+            let maxDurationSeconds = CMTimeGetSeconds(device.activeFormat.maxExposureDuration)
+            let requestedSeconds = Double(settings.duration) / 1_000_000_000.0
+            let clampedSeconds = max(minDurationSeconds, min(maxDurationSeconds, requestedSeconds))
+            let duration = CMTimeMakeWithSeconds(clampedSeconds, preferredTimescale: 1_000_000_000)
+
+            device.setExposureModeCustom(duration: duration, iso: clampedISO, completionHandler: nil)
+            device.isSubjectAreaChangeMonitoringEnabled = true
+            return nil
+        } catch {
+            return .configurationFailed(error.localizedDescription)
+        }
     }
 }
 #endif

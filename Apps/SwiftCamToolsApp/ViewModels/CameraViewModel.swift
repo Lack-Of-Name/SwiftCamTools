@@ -5,6 +5,12 @@ import Combine
 import CoreMedia
 import SwiftUI
 import SwiftCamCore
+#if canImport(UIKit)
+import UIKit
+typealias CameraPreviewImage = UIImage
+#else
+typealias CameraPreviewImage = AnyObject
+#endif
 
 @MainActor
 final class CameraViewModel: ObservableObject {
@@ -16,6 +22,8 @@ final class CameraViewModel: ObservableObject {
     @Published var lastError: CameraError?
     @Published var isControlDrawerPresented: Bool = false
     @Published var showGridOverlay: Bool = true
+    @Published var isCapturing: Bool = false
+    @Published var lastCapturedPreview: CameraPreviewImage?
 
     var session: AVCaptureSession? {
         service.session
@@ -33,6 +41,7 @@ final class CameraViewModel: ObservableObject {
     }
 
     func capture() {
+        isCapturing = true
         service.capture(mode: mode, settings: settings) { [weak self] result in
             guard let self else { return }
             Task { @MainActor in
@@ -42,6 +51,7 @@ final class CameraViewModel: ObservableObject {
                 case .failure(let error):
                     self.lastError = error
                 }
+                self.isCapturing = false
             }
         }
     }
@@ -56,6 +66,12 @@ final class CameraViewModel: ObservableObject {
             return
         }
 
+#if canImport(UIKit)
+        if let image = UIImage(data: data) {
+            lastCapturedPreview = image
+        }
+#endif
+
         photoSaver.savePhotoData(data) { [weak self] result in
             guard let self else { return }
             switch result {
@@ -65,6 +81,13 @@ final class CameraViewModel: ObservableObject {
                 self.lastError = error
             }
         }
+    }
+
+    func openMostRecentPhoto() {
+#if canImport(UIKit)
+        guard let url = URL(string: "photos-redirect://") else { return }
+        UIApplication.shared.open(url)
+#endif
     }
 
     private func sampleLuma(from buffer: CVPixelBuffer) -> [Double] {
@@ -141,6 +164,7 @@ final class CameraViewModel: ObservableObject {
         var copy = settings
         mutation(&copy)
         settings = copy
+        service.applyPreview(settings: copy)
     }
 }
 #endif

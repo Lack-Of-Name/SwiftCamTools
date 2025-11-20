@@ -23,5 +23,9 @@ final class CameraServiceBridge: ObservableObject {
     func capture(mode: CaptureMode, settings: ExposureSettings, completion: @escaping (Result<AVCapturePhoto, CameraError>) -> Void) {
         pipeline.controller.capture(mode: mode, settings: settings, completion: completion)
     }
+
+    func applyPreview(settings: ExposureSettings) {
+        pipeline.controller.applyPreviewExposure(settings: settings)
+    }
 }
 #endif
