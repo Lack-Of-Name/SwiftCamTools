@@ -56,7 +56,12 @@ final class LongExposureCaptureSession {
             return
         }
 
-        let normalization = CGFloat(totalWeight > 0 ? (1.0 / totalWeight) : (1.0 / max(1, frameCount)))
+        let normalization: CGFloat
+        if totalWeight > 0 {
+            normalization = CGFloat(1.0 / totalWeight)
+        } else {
+            normalization = CGFloat(1.0 / Double(max(1, frameCount)))
+        }
         image = image.applyingFilter("CIColorMatrix", parameters: makeScaleParameters(gain: normalization))
 
         let toneMapped = applyToneMapping(to: image)
