@@ -12,13 +12,25 @@ public struct ExposureSettings: Equatable, Codable {
     public var bracketOffsets: [Float]
     public var noiseReductionLevel: Float
     public var autoISO: Bool
+    public var aperture: Float
+    public var exposureBias: Float
 
-    public init(iso: Float = 800, duration: CMTimeValue = 1_000_000_000, bracketOffsets: [Float] = [], noiseReductionLevel: Float = 0.6, autoISO: Bool = false) {
+    public init(
+        iso: Float = 800,
+        duration: CMTimeValue = 1_000_000_000,
+        bracketOffsets: [Float] = [],
+        noiseReductionLevel: Float = 0.6,
+        autoISO: Bool = false,
+        aperture: Float = 1.8,
+        exposureBias: Float = 0.0
+    ) {
         self.iso = iso
         self.duration = duration
         self.bracketOffsets = bracketOffsets
         self.noiseReductionLevel = noiseReductionLevel
         self.autoISO = autoISO
+        self.aperture = aperture
+        self.exposureBias = exposureBias
     }
 }
 

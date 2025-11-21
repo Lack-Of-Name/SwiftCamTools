@@ -33,6 +33,7 @@ public final class CameraController: NSObject, ObservableObject {
     private var cachedMaxExposureDuration: Double = 0
     private var longExposureSession: LongExposureCaptureSession?
     private var longExposureCompletion: ((Result<Data, CameraError>) -> Void)?
+    private let referenceAperture: Double = 1.8
 
     @Published public private(set) var state: PipelineState = .idle
     @Published public private(set) var lastExposure: ExposureSettings = ExposureSettings()
@@ -267,17 +268,20 @@ extension CameraController {
             let maxDurationSeconds = CMTimeGetSeconds(device.activeFormat.maxExposureDuration)
             let requestedSeconds = Double(settings.duration) / 1_000_000_000.0
             let clampedSeconds = max(minDurationSeconds, min(maxDurationSeconds, requestedSeconds))
-            let duration = CMTimeMakeWithSeconds(clampedSeconds, preferredTimescale: 1_000_000_000)
+            let compensationScale = exposureCompensationScale(for: settings)
+            let distributed = distributeExposure(compensationScale: compensationScale, durationSeconds: clampedSeconds, device: device)
+            let duration = CMTimeMakeWithSeconds(distributed.duration, preferredTimescale: 1_000_000_000)
 
-            let resolvedISO: Float
+            let baseISO: Float
             if settings.autoISO {
-                resolvedISO = resolveAutoISO(for: device, targetDuration: clampedSeconds)
+                baseISO = resolveAutoISO(for: device, targetDuration: distributed.duration)
             } else {
-                resolvedISO = clampISO(Float(settings.iso), for: device)
+                baseISO = clampISO(Float(settings.iso), for: device)
             }
+            let resolvedISO = clampISO(baseISO * Float(distributed.isoScale), for: device)
 
             device.setExposureModeCustom(duration: duration, iso: resolvedISO, completionHandler: nil)
-            applyOverexposureFallbackIfNeeded(device: device, iso: resolvedISO, durationSeconds: clampedSeconds)
+            applyOverexposureFallbackIfNeeded(device: device, iso: resolvedISO, durationSeconds: distributed.duration)
             device.isSubjectAreaChangeMonitoringEnabled = enableSubjectMonitoring
             return nil
         } catch {
@@ -376,6 +380,43 @@ extension CameraController {
 
     private func makeLowPowerVideoSettings() -> [String: Any] {
         [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
+    }
+}
+
+private extension CameraController {
+    struct ExposureDistribution {
+        let duration: Double
+        let isoScale: Double
+    }
+
+    func exposureCompensationScale(for settings: ExposureSettings) -> Double {
+        let aperture = max(1.0, Double(settings.aperture))
+        let apertureScale = pow(referenceAperture / aperture, 2.0)
+        let biasScale = pow(2.0, Double(settings.exposureBias))
+        let combined = apertureScale * biasScale
+        return max(0.0625, min(combined, 8.0))
+    }
+
+    func distributeExposure(compensationScale: Double, durationSeconds: Double, device: AVCaptureDevice) -> ExposureDistribution {
+        let minDurationSeconds = CMTimeGetSeconds(device.activeFormat.minExposureDuration)
+        let maxDurationSeconds = CMTimeGetSeconds(device.activeFormat.maxExposureDuration)
+        var remainingScale = compensationScale
+        var adjustedDuration = durationSeconds
+
+        if remainingScale >= 1.0 {
+            let maxDurationScale = max(1.0, maxDurationSeconds / max(durationSeconds, 0.0001))
+            let appliedScale = min(remainingScale, maxDurationScale)
+            adjustedDuration = min(maxDurationSeconds, adjustedDuration * appliedScale)
+            remainingScale = max(1.0, remainingScale / max(appliedScale, 0.0001))
+        } else {
+            let minDurationScale = min(1.0, minDurationSeconds / max(durationSeconds, 0.0001))
+            let appliedScale = max(remainingScale, minDurationScale)
+            adjustedDuration = max(minDurationSeconds, adjustedDuration * appliedScale)
+            remainingScale = max(0.25, remainingScale / max(appliedScale, 0.0001))
+        }
+
+        let isoScale = max(0.25, min(4.0, remainingScale))
+        return ExposureDistribution(duration: adjustedDuration, isoScale: isoScale)
     }
 }
 #endif

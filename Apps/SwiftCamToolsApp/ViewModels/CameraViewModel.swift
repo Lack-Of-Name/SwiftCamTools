@@ -30,7 +30,15 @@ final class CameraViewModel: ObservableObject {
 
     var session: AVCaptureSession? { service.session }
 
-    private static let defaultSettings = ExposureSettings(iso: 1600, duration: CMTimeValue(2_000_000_000), bracketOffsets: [], noiseReductionLevel: 0.7)
+    private static let defaultSettings = ExposureSettings(
+        iso: 1600,
+        duration: CMTimeValue(2_000_000_000),
+        bracketOffsets: [],
+        noiseReductionLevel: 0.7,
+        autoISO: false,
+        aperture: 1.8,
+        exposureBias: 0.0
+    )
     private let service = CameraServiceBridge()
     private let photoSaver = PhotoSaver()
     private var exposureUpdateWorkItem: DispatchWorkItem?
@@ -93,6 +101,8 @@ final class CameraViewModel: ObservableObject {
     var isAutoISOEnabled: Bool { settings.autoISO }
     var shutterSeconds: Double { Double(settings.duration) / 1_000_000_000.0 }
     var noiseReduction: Double { Double(settings.noiseReductionLevel) }
+    var apertureValue: Double { Double(settings.aperture) }
+    var exposureBiasValue: Double { Double(settings.exposureBias) }
 
     func updateISO(_ value: Double) {
         updateSettings { $0.iso = Float(value) }
@@ -108,6 +118,14 @@ final class CameraViewModel: ObservableObject {
 
     func updateNoiseReduction(_ value: Double) {
         updateSettings { $0.noiseReductionLevel = Float(value) }
+    }
+
+    func updateAperture(_ value: Double) {
+        updateSettings { $0.aperture = Float(value) }
+    }
+
+    func updateExposureBias(_ value: Double) {
+        updateSettings { $0.exposureBias = Float(value) }
     }
 
     func toggleControlsPanel() {

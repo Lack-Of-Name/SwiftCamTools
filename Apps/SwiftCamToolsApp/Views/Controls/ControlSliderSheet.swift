@@ -77,12 +77,22 @@ struct ControlSliderSheet: View {
             )
         case .aperture:
             return AnyView(
-                VStack(spacing: 12) {
-                    Text("Aperture control is coming soon.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    ProgressView()
-                }
+                ControlValueSlider(
+                    value: Binding(get: { viewModel.apertureValue }, set: { viewModel.updateAperture($0) }),
+                    range: 1.4...8.0,
+                    formatter: { String(format: "f/%.1f", $0) },
+                    step: 0.1
+                )
+            )
+        case .bias:
+            return AnyView(
+                ControlValueSlider(
+                    value: Binding(get: { viewModel.exposureBiasValue }, set: { viewModel.updateExposureBias($0) }),
+                    range: -2.0...2.0,
+                    formatter: { String(format: "%+.1f EV", $0) },
+                    step: 0.1,
+                    tint: .orange
+                )
             )
         }
     }
@@ -96,7 +106,9 @@ struct ControlSliderSheet: View {
         case .noise:
             return "Noise Mix"
         case .aperture:
-            return "Planned Update"
+            return "Virtual Aperture"
+        case .bias:
+            return "Exposure Bias"
         }
     }
 }
@@ -106,6 +118,8 @@ private struct ControlValueSlider: View {
     let range: ClosedRange<Double>
     let formatter: (Double) -> String
     var isDisabled: Bool = false
+    var step: Double?
+    var tint: Color = .primary
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -116,8 +130,8 @@ private struct ControlValueSlider: View {
                 Spacer()
             }
 
-            Slider(value: $value, in: range)
-                .tint(.primary)
+            slider
+                .tint(tint)
                 .disabled(isDisabled)
                 .overlay {
                     Group {
@@ -132,6 +146,15 @@ private struct ControlValueSlider: View {
                         }
                     }
                 }
+        }
+    }
+
+    @ViewBuilder
+    private var slider: some View {
+        if let step {
+            Slider(value: $value, in: range, step: step)
+        } else {
+            Slider(value: $value, in: range)
         }
     }
 }

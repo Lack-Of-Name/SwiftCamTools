@@ -6,6 +6,7 @@ enum CameraControlKind: String, CaseIterable, Identifiable {
     case shutter
     case noise
     case aperture
+    case bias
 
     var id: String { rawValue }
 
@@ -15,6 +16,7 @@ enum CameraControlKind: String, CaseIterable, Identifiable {
         case .shutter: return "timer"
         case .noise: return "waveform"
         case .aperture: return "camera.aperture"
+        case .bias: return "plusminus.circle"
         }
     }
 
@@ -24,16 +26,12 @@ enum CameraControlKind: String, CaseIterable, Identifiable {
         case .shutter: return "Shutter"
         case .noise: return "Noise"
         case .aperture: return "F-Stop"
+        case .bias: return "Exposure"
         }
     }
 
     var isAvailable: Bool {
-        switch self {
-        case .aperture:
-            return false
-        default:
-            return true
-        }
+        true
     }
 }
 
@@ -89,7 +87,10 @@ struct CameraControlsPanel: View {
         case .noise:
             return String(format: "%d%%", Int(viewModel.noiseReduction * 100))
         case .aperture:
-            return "f/1.8"
+            let aperture = viewModel.apertureValue
+            return String(format: "f/%.1f", aperture)
+        case .bias:
+            return String(format: "%+.1f EV", viewModel.exposureBiasValue)
         }
     }
 }

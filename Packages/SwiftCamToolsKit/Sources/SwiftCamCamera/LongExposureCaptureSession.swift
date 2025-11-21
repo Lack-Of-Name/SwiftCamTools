@@ -19,12 +19,21 @@ final class LongExposureCaptureSession {
     private var startTime: CFTimeInterval?
     private var isFinishing = false
     private let targetShortSide: CGFloat = 1080
+    private var luminanceSamples: [Double] = []
+    private var totalWeight: Double = 0
+    private let apertureBoost: Double
+    private let stackingBiasScale: Double
+    private let toneBiasEV: Double
 
     init(duration: Double, maxFrameCount: Int, settings: ExposureSettings, completion: @escaping (Result<Data, CameraError>) -> Void) {
         self.duration = duration
         self.maxFrameCount = max(1, maxFrameCount)
         self.settings = settings
         self.completion = completion
+        let apertureValue = max(1.0, Double(settings.aperture))
+        self.apertureBoost = max(0.35, min(2.6, pow(1.8 / apertureValue, 2.0)))
+        self.stackingBiasScale = max(0.4, min(1.8, pow(2.0, Double(settings.exposureBias) * 0.5)))
+        self.toneBiasEV = Double(settings.exposureBias)
     }
 
     func ingest(_ buffer: CMSampleBuffer) {
@@ -47,22 +56,12 @@ final class LongExposureCaptureSession {
             return
         }
 
-        if frameCount > 1 {
-            let scale = CGFloat(1.0 / Float(frameCount))
-            let rVector = CIVector(x: scale, y: 0, z: 0, w: 0)
-            let gVector = CIVector(x: 0, y: scale, z: 0, w: 0)
-            let bVector = CIVector(x: 0, y: 0, z: scale, w: 0)
-            let aVector = CIVector(x: 0, y: 0, z: 0, w: 1)
-            image = image.applyingFilter("CIColorMatrix", parameters: [
-                "inputRVector": rVector,
-                "inputGVector": gVector,
-                "inputBVector": bVector,
-                "inputAVector": aVector,
-                "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
-            ])
-        }
+        let normalization = CGFloat(totalWeight > 0 ? (1.0 / totalWeight) : (1.0 / max(1, frameCount)))
+        image = image.applyingFilter("CIColorMatrix", parameters: makeScaleParameters(gain: normalization))
 
-        guard let data = render(image: image) else {
+        let toneMapped = applyToneMapping(to: image)
+        let biased = applyExposureBias(to: toneMapped)
+        guard let data = render(image: biased) else {
             completion(.failure(.captureFailed("Failed to render long exposure output.")))
             return
         }
@@ -73,10 +72,11 @@ final class LongExposureCaptureSession {
         let baseImage = CIImage(cvPixelBuffer: pixelBuffer)
         let downscaled = downscale(baseImage)
         let image = denoiseIfNeeded(downscaled)
-        if let existing = accumulator {
-            accumulator = image.applyingFilter("CIAdditionCompositing", parameters: ["inputBackgroundImage": existing])
+        if let luminance = sampleLuminance(from: image) {
+            luminanceSamples.append(luminance)
+            accumulate(image: image, weight: weight(for: luminance))
         } else {
-            accumulator = image
+            accumulate(image: image, weight: 1.0)
         }
         frameCount += 1
     }
@@ -91,10 +91,12 @@ final class LongExposureCaptureSession {
 
     private func denoiseIfNeeded(_ image: CIImage) -> CIImage {
         guard settings.noiseReductionLevel > 0 else { return image }
-        let noiseLevel = Double(settings.noiseReductionLevel) * 0.02
+        let noiseBase = Double(settings.noiseReductionLevel) * 0.02
+        let noiseLevel = noiseBase * (1.0 / max(0.6, min(apertureBoost, 2.2)))
+        let sharpness = max(0.2, min(0.6, 0.35 + (apertureBoost - 1.0) * 0.18))
         return image.applyingFilter("CINoiseReduction", parameters: [
             "inputNoiseLevel": noiseLevel,
-            "inputSharpness": 0.35
+            "inputSharpness": sharpness
         ])
     }
 
@@ -123,6 +125,103 @@ final class LongExposureCaptureSession {
         CGImageDestinationAddImage(destination, cgImage, options)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return data as Data
+    }
+
+    private func sampleLuminance(from image: CIImage) -> Double? {
+        let extent = image.extent
+        guard extent.width > 0, extent.height > 0 else { return nil }
+        let averageImage = image.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: extent)])
+        var bitmap = [UInt8](repeating: 0, count: 4)
+        context.render(
+            averageImage,
+            toBitmap: &bitmap,
+            rowBytes: 4,
+            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            format: .RGBA8,
+            colorSpace: nil
+        )
+        let r = Double(bitmap[0]) / 255.0
+        let g = Double(bitmap[1]) / 255.0
+        let b = Double(bitmap[2]) / 255.0
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    private func applyToneMapping(to image: CIImage) -> CIImage {
+        guard !luminanceSamples.isEmpty else { return image }
+        let averageLuminance = luminanceSamples.reduce(0, +) / Double(luminanceSamples.count)
+        let detailBoost = max(-0.15, min(0.2, (apertureBoost - 1.0) * 0.12))
+
+        if averageLuminance < 0.22 {
+            let exposureBoost = min(1.2, 0.5 + (0.22 - averageLuminance) * 2.5)
+            return image
+                .applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: exposureBoost])
+                .applyingFilter("CIColorControls", parameters: [
+                    kCIInputBrightnessKey: 0.05,
+                    kCIInputSaturationKey: 0.95,
+                    kCIInputContrastKey: 1.15
+                ])
+                .applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 0.35 + detailBoost])
+        }
+
+        if averageLuminance > 0.65 {
+            let highlightAmount = max(0.25, 1.0 - (averageLuminance - 0.65) * 1.6)
+            return image
+                .applyingFilter("CIHighlightShadowAdjust", parameters: [
+                    "inputHighlightAmount": highlightAmount,
+                    "inputShadowAmount": 0.0
+                ])
+                .applyingFilter("CIColorControls", parameters: [
+                    kCIInputBrightnessKey: -0.05,
+                    kCIInputSaturationKey: 0.9,
+                    kCIInputContrastKey: 0.95
+                ])
+        }
+
+        return image.applyingFilter("CIColorControls", parameters: [
+            kCIInputBrightnessKey: 0.0,
+            kCIInputSaturationKey: 1.05,
+            kCIInputContrastKey: 1.05
+        ])
+    }
+
+    private func accumulate(image: CIImage, weight: Double) {
+        let clampedWeight = max(0.2, min(weight, 3.0))
+        let weightedImage = image.applyingFilter("CIColorMatrix", parameters: makeScaleParameters(gain: CGFloat(clampedWeight)))
+        if let existing = accumulator {
+            accumulator = weightedImage.applyingFilter("CIAdditionCompositing", parameters: ["inputBackgroundImage": existing])
+        } else {
+            accumulator = weightedImage
+        }
+        totalWeight += clampedWeight
+    }
+
+    private func weight(for luminance: Double) -> Double {
+        switch luminance {
+        case ..<0.15:
+            return 2.4 * apertureBoost * stackingBiasScale
+        case ..<0.35:
+            return 1.7 * apertureBoost * stackingBiasScale
+        case ..<0.65:
+            return 1.0 * apertureBoost * stackingBiasScale
+        default:
+            return 0.55 * apertureBoost * stackingBiasScale
+        }
+    }
+
+    private func applyExposureBias(to image: CIImage) -> CIImage {
+        guard abs(toneBiasEV) > 0.01 else { return image }
+        return image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: toneBiasEV])
+    }
+
+    private func makeScaleParameters(gain: CGFloat) -> [String: Any] {
+        let safeGain = max(0, gain)
+        return [
+            "inputRVector": CIVector(x: safeGain, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: safeGain, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: safeGain, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
+        ]
     }
 }
 #endif
