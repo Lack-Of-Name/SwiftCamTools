@@ -189,6 +189,10 @@ final class LongExposureCaptureSession {
 
         var working = image
 
+        if summary.shadowRatio > 0.18 && summary.brightRatio > 0.06 {
+            working = applyDualToneCurve(to: working, summary: summary)
+        }
+
         if highlightClipping > 0.03 || dayBlend > 0.3 {
             let compression = max(0.05, min(0.85, 0.25 + highlightClipping * 0.9 + dayBlend * 0.4))
             let highlightAmount = max(0.12, 1.0 - compression)
@@ -324,6 +328,8 @@ final class LongExposureCaptureSession {
         let luminance: Double
         let highlightRatio: Double
         let blueRatio: Double
+        let shadowRatio: Double
+        let brightRatio: Double
     }
 
     private var averageSceneColor: SIMD3<Double>? {
@@ -349,7 +355,15 @@ final class LongExposureCaptureSession {
         } else {
             blueRatio = 1.0 / 3.0
         }
-        return SceneSummary(luminance: averageLuminance, highlightRatio: highlightRatio, blueRatio: blueRatio)
+        let shadowRatio = Double(luminanceSamples.filter { $0 < 0.22 }.count) / Double(luminanceSamples.count)
+        let brightRatio = Double(luminanceSamples.filter { $0 > 0.72 }.count) / Double(luminanceSamples.count)
+        return SceneSummary(
+            luminance: averageLuminance,
+            highlightRatio: highlightRatio,
+            blueRatio: blueRatio,
+            shadowRatio: shadowRatio,
+            brightRatio: brightRatio
+        )
     }
 
     private func smoothNeutralScale(channel: Double, target: Double) -> Double {
@@ -385,6 +399,31 @@ final class LongExposureCaptureSession {
         let highlightPenalty = min(1.0, summary.highlightRatio * 1.6)
         let pull = min(1.0, dayBlend * 0.7 + highlightPenalty * 0.6)
         return lerp(saturationTarget, 1.0, t: pull)
+    }
+
+    private func applyDualToneCurve(to image: CIImage, summary: SceneSummary) -> CIImage {
+        let shadowLift = min(0.35, summary.shadowRatio * 0.55)
+        let midLift = min(0.2, shadowLift * 0.8)
+        let highlightRollOff = min(0.45, summary.highlightRatio * 0.8 + summary.brightRatio * 0.6)
+        let p0 = CIVector(x: 0.0, y: CGFloat(max(0.0, shadowLift * 0.75)))
+        let p1 = CIVector(x: 0.25, y: CGFloat(min(0.45, 0.25 + shadowLift * 0.85)))
+        let p2 = CIVector(x: 0.5, y: CGFloat(min(0.75, 0.5 + midLift - highlightRollOff * 0.15)))
+        let p3 = CIVector(x: 0.75, y: CGFloat(max(0.5, 0.75 - highlightRollOff * 0.65)))
+        let p4 = CIVector(x: 1.0, y: CGFloat(max(0.65, 1.0 - highlightRollOff)))
+
+        return image
+            .applyingFilter("CIToneCurve", parameters: [
+                "inputPoint0": p0,
+                "inputPoint1": p1,
+                "inputPoint2": p2,
+                "inputPoint3": p3,
+                "inputPoint4": p4
+            ])
+            .applyingFilter("CIColorControls", parameters: [
+                kCIInputBrightnessKey: shadowLift * 0.1,
+                kCIInputContrastKey: 1.0 - highlightRollOff * 0.1,
+                kCIInputSaturationKey: 1.0
+            ])
     }
 
     private func makeScaleParameters(gain: CGFloat) -> [String: Any] {
