@@ -387,18 +387,22 @@ final class LongExposureCaptureSession {
     }
 
     private func dayModeBlend(for summary: SceneSummary) -> Double {
-        let luminanceScore = max(0.0, min(1.0, (summary.luminance - 0.32) / 0.35))
-        let highlightScore = max(0.0, min(1.0, (summary.highlightRatio - 0.04) * 7.0))
-        let blueScore = max(0.0, min(1.0, (summary.blueRatio - 0.38) * 2.2))
-        return max(0.0, min(1.0, luminanceScore * 0.5 + highlightScore * 0.3 + blueScore * 0.2))
+        let luminanceScore = max(0.0, min(1.0, (summary.luminance - 0.34) / 0.32))
+        let highlightScore = max(0.0, min(1.0, (summary.highlightRatio - 0.05) * 6.0))
+        let blueScore = max(0.0, min(1.0, (summary.blueRatio - 0.42) * 1.8))
+        let blueGate = summary.luminance > 0.55 ? blueScore : blueScore * max(0.0, (summary.luminance - 0.35) / 0.2)
+        return max(0.0, min(1.0, luminanceScore * 0.55 + highlightScore * 0.35 + blueGate * 0.1))
     }
 
     private func effectiveSaturationTarget(for summary: SceneSummary?) -> Double {
         guard let summary else { return saturationTarget }
         let dayBlend = dayModeBlend(for: summary)
         let highlightPenalty = min(1.0, summary.highlightRatio * 1.6)
-        let pull = min(1.0, dayBlend * 0.7 + highlightPenalty * 0.6)
-        return lerp(saturationTarget, 1.0, t: pull)
+        let shadowBonus = max(0.0, (0.28 - summary.luminance) * 1.4)
+        let pull = min(1.0, dayBlend * 0.45 + highlightPenalty * 0.5)
+        let lift = min(0.25, shadowBonus)
+        let neutralBlend = lerp(saturationTarget, 1.0, t: pull)
+        return neutralBlend + lift
     }
 
     private func applyDualToneCurve(to image: CIImage, summary: SceneSummary) -> CIImage {
