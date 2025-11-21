@@ -88,9 +88,11 @@ final class LongExposureCaptureSession {
             luminanceSamples.append(metrics.luminance)
             highlightSamples.append(metrics.highlight)
             colorSamples.append(metrics.averageColor)
-            accumulate(image: image, weight: weight(for: metrics.luminance, highlight: metrics.highlight))
+            let guarded = applyChromaGuard(to: image, metrics: metrics)
+            let frameWeight = weight(for: metrics.luminance, highlight: metrics.highlight, chroma: metrics.chroma)
+            accumulate(image: guarded, weight: frameWeight)
         } else {
-            accumulate(image: image, weight: weight(for: 0.5, highlight: 0.5))
+            accumulate(image: image, weight: weight(for: 0.5, highlight: 0.5, chroma: 0.2))
         }
         frameCount += 1
     }
@@ -172,32 +174,39 @@ final class LongExposureCaptureSession {
         let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
         let highlight = Double(max(maximumPixel[0], max(maximumPixel[1], maximumPixel[2]))) / 255.0
         let color = SIMD3<Double>(r, g, b)
-        return SceneMetrics(luminance: luminance, averageColor: color, highlight: highlight)
+        let maxChannel = max(r, max(g, b))
+        let minChannel = min(r, min(g, b))
+        let chroma = max(0.0, maxChannel - minChannel)
+        return SceneMetrics(luminance: luminance, averageColor: color, highlight: highlight, chroma: chroma)
     }
 
     private func applyToneMapping(to image: CIImage) -> CIImage {
-        guard !luminanceSamples.isEmpty else { return image }
-        let averageLuminance = luminanceSamples.reduce(0, +) / Double(luminanceSamples.count)
-        let highlightClipping: Double
-        if highlightSamples.isEmpty {
-            highlightClipping = 0
-        } else {
-            let clipped = highlightSamples.filter { $0 >= 0.92 }.count
-            highlightClipping = Double(clipped) / Double(highlightSamples.count)
-        }
+        guard let summary = sceneSummary else { return image }
+        let averageLuminance = summary.luminance
+        let highlightClipping = summary.highlightRatio
         let detailBoost = max(-0.15, min(0.2, (apertureBoost - 1.0) * 0.12))
+        let dayBlend = dayModeBlend(for: summary)
 
         var working = image
 
-        if highlightClipping > 0.04 {
-            let exposurePull = min(0.8, 0.2 + highlightClipping * 0.9)
-            let highlightAmount = max(0.15, 1.0 - highlightClipping * 0.9)
+        if highlightClipping > 0.03 || dayBlend > 0.3 {
+            let compression = max(0.05, min(0.85, 0.25 + highlightClipping * 0.9 + dayBlend * 0.4))
+            let highlightAmount = max(0.12, 1.0 - compression)
+            let shadowLift = min(0.45, compression * 0.35)
             working = working
                 .applyingFilter("CIHighlightShadowAdjust", parameters: [
                     "inputHighlightAmount": highlightAmount,
-                    "inputShadowAmount": min(0.45, highlightClipping * 0.5)
+                    "inputShadowAmount": shadowLift
                 ])
-                .applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: -exposurePull])
+                .applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: -compression * 0.75])
+        }
+
+        if dayBlend > 0.4 {
+            working = working.applyingFilter("CIColorControls", parameters: [
+                kCIInputBrightnessKey: -0.02 * dayBlend,
+                kCIInputSaturationKey: 1.0 - 0.08 * dayBlend,
+                kCIInputContrastKey: 1.02 + 0.06 * dayBlend
+            ])
         }
 
         if averageLuminance < 0.22 {
@@ -244,7 +253,7 @@ final class LongExposureCaptureSession {
         totalWeight += clampedWeight
     }
 
-    private func weight(for luminance: Double, highlight: Double) -> Double {
+    private func weight(for luminance: Double, highlight: Double, chroma: Double) -> Double {
         let base: Double
         switch luminance {
         case ..<0.15:
@@ -257,7 +266,8 @@ final class LongExposureCaptureSession {
             base = 0.55
         }
         let highlightPenalty = max(0.35, 1.0 - max(0.0, highlight - 0.7) * 1.1)
-        return max(0.2, base * apertureBoost * stackingBiasScale * highlightPenalty)
+        let chromaPenalty = max(0.4, 1.0 - chroma * 0.9)
+        return max(0.2, base * apertureBoost * stackingBiasScale * highlightPenalty * chromaPenalty)
     }
 
     private func applyExposureBias(to image: CIImage) -> CIImage {
@@ -266,9 +276,10 @@ final class LongExposureCaptureSession {
     }
 
     private func applySaturation(to image: CIImage) -> CIImage {
-        guard abs(saturationTarget - 1.0) > 0.01 else { return image }
+        let target = effectiveSaturationTarget(for: sceneSummary)
+        guard abs(target - 1.0) > 0.01 else { return image }
         return image.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: saturationTarget,
+            kCIInputSaturationKey: target,
             kCIInputBrightnessKey: 0,
             kCIInputContrastKey: 1
         ])
@@ -292,16 +303,53 @@ final class LongExposureCaptureSession {
         ])
     }
 
+    private func applyChromaGuard(to image: CIImage, metrics: SceneMetrics) -> CIImage {
+        let target = perFrameSaturationTarget(for: metrics)
+        guard abs(target - 1.0) > 0.02 else { return image }
+        return image.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: target,
+            kCIInputBrightnessKey: 0,
+            kCIInputContrastKey: 1
+        ])
+    }
+
     private struct SceneMetrics {
         let luminance: Double
         let averageColor: SIMD3<Double>
         let highlight: Double
+        let chroma: Double
+    }
+
+    private struct SceneSummary {
+        let luminance: Double
+        let highlightRatio: Double
+        let blueRatio: Double
     }
 
     private var averageSceneColor: SIMD3<Double>? {
         guard !colorSamples.isEmpty else { return nil }
         let sum = colorSamples.reduce(SIMD3<Double>(repeating: 0)) { $0 + $1 }
         return sum / Double(colorSamples.count)
+    }
+
+    private var sceneSummary: SceneSummary? {
+        guard !luminanceSamples.isEmpty else { return nil }
+        let averageLuminance = luminanceSamples.reduce(0, +) / Double(luminanceSamples.count)
+        let highlightRatio: Double
+        if highlightSamples.isEmpty {
+            highlightRatio = 0
+        } else {
+            let clipped = highlightSamples.filter { $0 >= 0.92 }.count
+            highlightRatio = Double(clipped) / Double(highlightSamples.count)
+        }
+        let blueRatio: Double
+        if let color = averageSceneColor {
+            let total = max(0.001, color.x + color.y + color.z)
+            blueRatio = max(0.0, min(1.0, color.z / total))
+        } else {
+            blueRatio = 1.0 / 3.0
+        }
+        return SceneSummary(luminance: averageLuminance, highlightRatio: highlightRatio, blueRatio: blueRatio)
     }
 
     private func smoothNeutralScale(channel: Double, target: Double) -> Double {
@@ -313,6 +361,30 @@ final class LongExposureCaptureSession {
 
     private func lerp(_ a: Double, _ b: Double, t: Double) -> Double {
         a + (b - a) * max(0.0, min(1.0, t))
+    }
+
+    private func perFrameSaturationTarget(for metrics: SceneMetrics) -> Double {
+        let highlightPenalty = max(0.0, metrics.highlight - 0.75) * 1.2
+        let chromaPenalty = max(0.0, metrics.chroma - 0.35) * 0.9
+        let luminanceBoost = metrics.luminance < 0.18 ? (0.18 - metrics.luminance) * 0.6 : 0.0
+        let reduction = min(0.5, highlightPenalty + chromaPenalty)
+        let target = 1.0 - reduction + luminanceBoost
+        return max(0.7, min(1.15, target))
+    }
+
+    private func dayModeBlend(for summary: SceneSummary) -> Double {
+        let luminanceScore = max(0.0, min(1.0, (summary.luminance - 0.32) / 0.35))
+        let highlightScore = max(0.0, min(1.0, (summary.highlightRatio - 0.04) * 7.0))
+        let blueScore = max(0.0, min(1.0, (summary.blueRatio - 0.38) * 2.2))
+        return max(0.0, min(1.0, luminanceScore * 0.5 + highlightScore * 0.3 + blueScore * 0.2))
+    }
+
+    private func effectiveSaturationTarget(for summary: SceneSummary?) -> Double {
+        guard let summary else { return saturationTarget }
+        let dayBlend = dayModeBlend(for: summary)
+        let highlightPenalty = min(1.0, summary.highlightRatio * 1.6)
+        let pull = min(1.0, dayBlend * 0.7 + highlightPenalty * 0.6)
+        return lerp(saturationTarget, 1.0, t: pull)
     }
 
     private func makeScaleParameters(gain: CGFloat) -> [String: Any] {
