@@ -286,23 +286,21 @@ final class LongExposureCaptureSession {
         let highlight: Double
     }
 
-    private extension LongExposureCaptureSession {
-        var averageSceneColor: SIMD3<Double>? {
-            guard !colorSamples.isEmpty else { return nil }
-            let sum = colorSamples.reduce(SIMD3<Double>(repeating: 0)) { $0 + $1 }
-            return sum / Double(colorSamples.count)
-        }
+    private var averageSceneColor: SIMD3<Double>? {
+        guard !colorSamples.isEmpty else { return nil }
+        let sum = colorSamples.reduce(SIMD3<Double>(repeating: 0)) { $0 + $1 }
+        return sum / Double(colorSamples.count)
+    }
 
-        func smoothNeutralScale(channel: Double, target: Double) -> Double {
-            guard channel > 0.0001 else { return 1.0 }
-            let raw = target / channel
-            let clamped = max(0.6, min(raw, 1.6))
-            return mix(1.0, clamped, t: 0.35)
-        }
+    private func smoothNeutralScale(channel: Double, target: Double) -> Double {
+        guard channel > 0.0001 else { return 1.0 }
+        let raw = target / channel
+        let clamped = max(0.6, min(raw, 1.6))
+        return lerp(1.0, clamped, t: 0.35)
+    }
 
-        func mix(_ a: Double, _ b: Double, t: Double) -> Double {
-            a + (b - a) * max(0.0, min(1.0, t))
-        }
+    private func lerp(_ a: Double, _ b: Double, t: Double) -> Double {
+        a + (b - a) * max(0.0, min(1.0, t))
     }
 
     private func makeScaleParameters(gain: CGFloat) -> [String: Any] {
