@@ -86,7 +86,7 @@ struct CameraControlsPanel: View {
             }
             return "ISO " + Int(viewModel.isoValue).formatted()
         case .shutter:
-            return Self.shutterDisplayText(viewModel.shutterSeconds)
+            return CameraControlKind.shutterDisplayText(viewModel.shutterSeconds)
         case .aperture:
             let aperture = viewModel.apertureValue
             return String(format: "f/%.1f", aperture)
