@@ -345,11 +345,7 @@ extension CameraController {
             self.session.sessionPreset = .high
         }
         self.videoOutput.alwaysDiscardsLateVideoFrames = true
-        self.videoOutput.videoSettings = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
-            kCVPixelBufferWidthKey as String: 960,
-            kCVPixelBufferHeightKey as String: 540
-        ]
+        self.videoOutput.videoSettings = makeLowPowerVideoSettings()
         if let connection = self.videoOutput.connection(with: .video) {
             if connection.isVideoStabilizationSupported {
                 connection.preferredVideoStabilizationMode = .off
@@ -376,6 +372,33 @@ extension CameraController {
         } catch {
             logger.error("Unable to cap preview FPS: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    // Downscale preview frames without violating the active format's aspect ratio.
+    private func makeLowPowerVideoSettings() -> [String: Any] {
+        var settings: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+        ]
+        guard let device = captureDevice else { return settings }
+        let formatDescription = device.activeFormat.formatDescription
+        let activeDimensions = CMVideoFormatDescriptionGetDimensions(formatDescription)
+        let activeWidth = Int(activeDimensions.width)
+        let activeHeight = Int(activeDimensions.height)
+        guard activeWidth > 0, activeHeight > 0 else { return settings }
+
+        let shortEdge = min(activeWidth, activeHeight)
+        let targetShortEdge = 540
+        guard shortEdge > targetShortEdge else { return settings }
+
+        let scale = Double(targetShortEdge) / Double(shortEdge)
+        var scaledWidth = Int((Double(activeWidth) * scale).rounded(.toNearestOrAwayFromZero))
+        var scaledHeight = Int((Double(activeHeight) * scale).rounded(.toNearestOrAwayFromZero))
+        scaledWidth = max(2, scaledWidth - (scaledWidth & 1))
+        scaledHeight = max(2, scaledHeight - (scaledHeight & 1))
+
+        settings[kCVPixelBufferWidthKey as String] = scaledWidth
+        settings[kCVPixelBufferHeightKey as String] = scaledHeight
+        return settings
     }
 }
 #endif
