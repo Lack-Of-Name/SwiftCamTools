@@ -61,13 +61,14 @@ final class LongExposureCaptureSession {
             return
         }
 
-        let normalization: CGFloat
+        let baseNormalization: Double
         if totalWeight > 0 {
-            normalization = CGFloat(1.0 / totalWeight)
+            baseNormalization = 1.0 / totalWeight
         } else {
-            normalization = CGFloat(1.0 / Double(max(1, frameCount)))
+            baseNormalization = 1.0 / Double(max(1, frameCount))
         }
-        image = image.applyingFilter("CIColorMatrix", parameters: makeScaleParameters(gain: normalization))
+        let scaledNormalization = baseNormalization * normalizationScale(for: sceneSummary)
+        image = image.applyingFilter("CIColorMatrix", parameters: makeScaleParameters(gain: CGFloat(scaledNormalization)))
 
         let toneMapped = applyToneMapping(to: image)
         let colorPreserved = applyColorPreservation(to: toneMapped)
@@ -214,13 +215,16 @@ final class LongExposureCaptureSession {
         }
 
         if averageLuminance < 0.22 {
-            let exposureBoost = min(1.2, 0.5 + (0.22 - averageLuminance) * 2.5)
+            let deficit = max(0.0, 0.26 - averageLuminance)
+            let exposureBoost = min(2.4, 0.65 + deficit * 4.2)
+            let brightnessLift = min(0.2, deficit * 0.45)
+            let contrastBoost = min(1.25, 1.12 + deficit * 0.4)
             return working
                 .applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: exposureBoost])
                 .applyingFilter("CIColorControls", parameters: [
-                    kCIInputBrightnessKey: 0.05,
-                    kCIInputSaturationKey: 0.95,
-                    kCIInputContrastKey: 1.15
+                    kCIInputBrightnessKey: 0.05 + brightnessLift,
+                    kCIInputSaturationKey: 0.98,
+                    kCIInputContrastKey: contrastBoost
                 ])
                 .applyingFilter("CISharpenLuminance", parameters: [kCIInputSharpnessKey: 0.35 + detailBoost])
         }
@@ -429,6 +433,16 @@ final class LongExposureCaptureSession {
                 kCIInputSaturationKey: 1.0
             ])
     }
+
+        private func normalizationScale(for summary: SceneSummary?) -> Double {
+            guard let summary else { return 1.0 }
+            let darkness = max(0.0, (0.30 - summary.luminance) / 0.30)
+            let headroom = max(0.0, 1.0 - min(1.0, summary.highlightRatio * 3.0))
+            let brightPenalty = max(0.0, summary.brightRatio - 0.12)
+            let base = 1.0 + pow(darkness, 1.2) * (1.6 + 1.6 * headroom)
+            let penalty = max(0.6, 1.0 - brightPenalty * 0.7)
+            return max(0.8, min(4.2, base * penalty))
+        }
 
     private func makeScaleParameters(gain: CGFloat) -> [String: Any] {
         let safeGain = max(0, gain)
