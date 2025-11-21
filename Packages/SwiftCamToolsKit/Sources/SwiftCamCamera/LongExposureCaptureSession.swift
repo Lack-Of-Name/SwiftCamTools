@@ -7,6 +7,7 @@ import CoreVideo
 import ImageIO
 import QuartzCore
 import SwiftCamCore
+import simd
 
 final class LongExposureCaptureSession {
     private let duration: Double
@@ -24,6 +25,8 @@ final class LongExposureCaptureSession {
     private let apertureBoost: Double
     private let stackingBiasScale: Double
     private let toneBiasEV: Double
+    private var highlightSamples: [Double] = []
+    private var colorSamples: [SIMD3<Double>] = []
 
     init(duration: Double, maxFrameCount: Int, settings: ExposureSettings, completion: @escaping (Result<Data, CameraError>) -> Void) {
         self.duration = duration
@@ -65,7 +68,8 @@ final class LongExposureCaptureSession {
         image = image.applyingFilter("CIColorMatrix", parameters: makeScaleParameters(gain: normalization))
 
         let toneMapped = applyToneMapping(to: image)
-        let biased = applyExposureBias(to: toneMapped)
+        let colorPreserved = applyColorPreservation(to: toneMapped)
+        let biased = applyExposureBias(to: colorPreserved)
         guard let data = render(image: biased) else {
             completion(.failure(.captureFailed("Failed to render long exposure output.")))
             return
@@ -77,11 +81,13 @@ final class LongExposureCaptureSession {
         let baseImage = CIImage(cvPixelBuffer: pixelBuffer)
         let downscaled = downscale(baseImage)
         let image = denoiseIfNeeded(downscaled)
-        if let luminance = sampleLuminance(from: image) {
-            luminanceSamples.append(luminance)
-            accumulate(image: image, weight: weight(for: luminance))
+        if let metrics = sampleSceneMetrics(from: image) {
+            luminanceSamples.append(metrics.luminance)
+            highlightSamples.append(metrics.highlight)
+            colorSamples.append(metrics.averageColor)
+            accumulate(image: image, weight: weight(for: metrics.luminance, highlight: metrics.highlight))
         } else {
-            accumulate(image: image, weight: 1.0)
+            accumulate(image: image, weight: weight(for: 0.5, highlight: 0.5))
         }
         frameCount += 1
     }
@@ -132,33 +138,68 @@ final class LongExposureCaptureSession {
         return data as Data
     }
 
-    private func sampleLuminance(from image: CIImage) -> Double? {
+    private func sampleSceneMetrics(from image: CIImage) -> SceneMetrics? {
         let extent = image.extent
         guard extent.width > 0, extent.height > 0 else { return nil }
         let averageImage = image.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: CIVector(cgRect: extent)])
-        var bitmap = [UInt8](repeating: 0, count: 4)
+        var averagePixel = [UInt8](repeating: 0, count: 4)
         context.render(
             averageImage,
-            toBitmap: &bitmap,
+            toBitmap: &averagePixel,
             rowBytes: 4,
             bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
             format: .RGBA8,
             colorSpace: nil
         )
-        let r = Double(bitmap[0]) / 255.0
-        let g = Double(bitmap[1]) / 255.0
-        let b = Double(bitmap[2]) / 255.0
-        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+        let maximumImage = image.applyingFilter("CIAreaMaximum", parameters: [kCIInputExtentKey: CIVector(cgRect: extent)])
+        var maximumPixel = [UInt8](repeating: 0, count: 4)
+        context.render(
+            maximumImage,
+            toBitmap: &maximumPixel,
+            rowBytes: 4,
+            bounds: CGRect(x: 0, y: 0, width: 1, height: 1),
+            format: .RGBA8,
+            colorSpace: nil
+        )
+
+        let r = Double(averagePixel[0]) / 255.0
+        let g = Double(averagePixel[1]) / 255.0
+        let b = Double(averagePixel[2]) / 255.0
+        let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        let highlight = Double(max(maximumPixel[0], max(maximumPixel[1], maximumPixel[2]))) / 255.0
+        let color = SIMD3<Double>(r, g, b)
+        return SceneMetrics(luminance: luminance, averageColor: color, highlight: highlight)
     }
 
     private func applyToneMapping(to image: CIImage) -> CIImage {
         guard !luminanceSamples.isEmpty else { return image }
         let averageLuminance = luminanceSamples.reduce(0, +) / Double(luminanceSamples.count)
+        let highlightClipping: Double
+        if highlightSamples.isEmpty {
+            highlightClipping = 0
+        } else {
+            let clipped = highlightSamples.filter { $0 >= 0.92 }.count
+            highlightClipping = Double(clipped) / Double(highlightSamples.count)
+        }
         let detailBoost = max(-0.15, min(0.2, (apertureBoost - 1.0) * 0.12))
+
+        var working = image
+
+        if highlightClipping > 0.04 {
+            let exposurePull = min(0.8, 0.2 + highlightClipping * 0.9)
+            let highlightAmount = max(0.15, 1.0 - highlightClipping * 0.9)
+            working = working
+                .applyingFilter("CIHighlightShadowAdjust", parameters: [
+                    "inputHighlightAmount": highlightAmount,
+                    "inputShadowAmount": min(0.45, highlightClipping * 0.5)
+                ])
+                .applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: -exposurePull])
+        }
 
         if averageLuminance < 0.22 {
             let exposureBoost = min(1.2, 0.5 + (0.22 - averageLuminance) * 2.5)
-            return image
+            return working
                 .applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: exposureBoost])
                 .applyingFilter("CIColorControls", parameters: [
                     kCIInputBrightnessKey: 0.05,
@@ -169,23 +210,23 @@ final class LongExposureCaptureSession {
         }
 
         if averageLuminance > 0.65 {
-            let highlightAmount = max(0.25, 1.0 - (averageLuminance - 0.65) * 1.6)
-            return image
+            let highlightAmount = max(0.2, 1.0 - (averageLuminance - 0.65) * 1.8)
+            return working
                 .applyingFilter("CIHighlightShadowAdjust", parameters: [
                     "inputHighlightAmount": highlightAmount,
-                    "inputShadowAmount": 0.0
+                    "inputShadowAmount": 0.05
                 ])
                 .applyingFilter("CIColorControls", parameters: [
-                    kCIInputBrightnessKey: -0.05,
+                    kCIInputBrightnessKey: -0.08,
                     kCIInputSaturationKey: 0.9,
                     kCIInputContrastKey: 0.95
                 ])
         }
 
-        return image.applyingFilter("CIColorControls", parameters: [
-            kCIInputBrightnessKey: 0.0,
-            kCIInputSaturationKey: 1.05,
-            kCIInputContrastKey: 1.05
+        return working.applyingFilter("CIColorControls", parameters: [
+            kCIInputBrightnessKey: -0.01,
+            kCIInputSaturationKey: 1.03,
+            kCIInputContrastKey: 1.04
         ])
     }
 
@@ -200,22 +241,68 @@ final class LongExposureCaptureSession {
         totalWeight += clampedWeight
     }
 
-    private func weight(for luminance: Double) -> Double {
+    private func weight(for luminance: Double, highlight: Double) -> Double {
+        let base: Double
         switch luminance {
         case ..<0.15:
-            return 2.4 * apertureBoost * stackingBiasScale
+            base = 2.4
         case ..<0.35:
-            return 1.7 * apertureBoost * stackingBiasScale
+            base = 1.7
         case ..<0.65:
-            return 1.0 * apertureBoost * stackingBiasScale
+            base = 1.0
         default:
-            return 0.55 * apertureBoost * stackingBiasScale
+            base = 0.55
         }
+        let highlightPenalty = max(0.35, 1.0 - max(0.0, highlight - 0.7) * 1.1)
+        return max(0.2, base * apertureBoost * stackingBiasScale * highlightPenalty)
     }
 
     private func applyExposureBias(to image: CIImage) -> CIImage {
         guard abs(toneBiasEV) > 0.01 else { return image }
         return image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: toneBiasEV])
+    }
+
+    private func applyColorPreservation(to image: CIImage) -> CIImage {
+        guard let averageColor = averageSceneColor else { return image }
+        let neutral = max(0.08, min(0.92, (averageColor.x + averageColor.y + averageColor.z) / 3.0))
+        guard neutral > 0 else { return image }
+
+        let rScale = smoothNeutralScale(channel: averageColor.x, target: neutral)
+        let gScale = smoothNeutralScale(channel: averageColor.y, target: neutral)
+        let bScale = smoothNeutralScale(channel: averageColor.z, target: neutral)
+
+        return image.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: CGFloat(rScale), y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: CGFloat(gScale), z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: CGFloat(bScale), w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 0)
+        ])
+    }
+
+    private struct SceneMetrics {
+        let luminance: Double
+        let averageColor: SIMD3<Double>
+        let highlight: Double
+    }
+
+    private extension LongExposureCaptureSession {
+        var averageSceneColor: SIMD3<Double>? {
+            guard !colorSamples.isEmpty else { return nil }
+            let sum = colorSamples.reduce(SIMD3<Double>(repeating: 0)) { $0 + $1 }
+            return sum / Double(colorSamples.count)
+        }
+
+        func smoothNeutralScale(channel: Double, target: Double) -> Double {
+            guard channel > 0.0001 else { return 1.0 }
+            let raw = target / channel
+            let clamped = max(0.6, min(raw, 1.6))
+            return mix(1.0, clamped, t: 0.35)
+        }
+
+        func mix(_ a: Double, _ b: Double, t: Double) -> Double {
+            a + (b - a) * max(0.0, min(1.0, t))
+        }
     }
 
     private func makeScaleParameters(gain: CGFloat) -> [String: Any] {
