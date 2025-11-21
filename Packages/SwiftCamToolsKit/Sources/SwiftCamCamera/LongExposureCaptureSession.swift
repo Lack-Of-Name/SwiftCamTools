@@ -27,6 +27,7 @@ final class LongExposureCaptureSession {
     private let toneBiasEV: Double
     private var highlightSamples: [Double] = []
     private var colorSamples: [SIMD3<Double>] = []
+    private let saturationTarget: Double
 
     init(duration: Double, maxFrameCount: Int, settings: ExposureSettings, completion: @escaping (Result<Data, CameraError>) -> Void) {
         self.duration = duration
@@ -37,6 +38,7 @@ final class LongExposureCaptureSession {
         self.apertureBoost = max(0.35, min(2.6, pow(1.8 / apertureValue, 2.0)))
         self.stackingBiasScale = max(0.4, min(1.8, pow(2.0, Double(settings.exposureBias) * 0.5)))
         self.toneBiasEV = Double(settings.exposureBias)
+        self.saturationTarget = Double(settings.colorSaturation)
     }
 
     func ingest(_ buffer: CMSampleBuffer) {
@@ -69,7 +71,8 @@ final class LongExposureCaptureSession {
 
         let toneMapped = applyToneMapping(to: image)
         let colorPreserved = applyColorPreservation(to: toneMapped)
-        let biased = applyExposureBias(to: colorPreserved)
+        let saturated = applySaturation(to: colorPreserved)
+        let biased = applyExposureBias(to: saturated)
         guard let data = render(image: biased) else {
             completion(.failure(.captureFailed("Failed to render long exposure output.")))
             return
@@ -260,6 +263,15 @@ final class LongExposureCaptureSession {
     private func applyExposureBias(to image: CIImage) -> CIImage {
         guard abs(toneBiasEV) > 0.01 else { return image }
         return image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey: toneBiasEV])
+    }
+
+    private func applySaturation(to image: CIImage) -> CIImage {
+        guard abs(saturationTarget - 1.0) > 0.01 else { return image }
+        return image.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: saturationTarget,
+            kCIInputBrightnessKey: 0,
+            kCIInputContrastKey: 1
+        ])
     }
 
     private func applyColorPreservation(to image: CIImage) -> CIImage {

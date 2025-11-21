@@ -30,14 +30,18 @@ final class CameraViewModel: ObservableObject {
 
     var session: AVCaptureSession? { service.session }
 
+    private static let defaultAperture: Float = 1.8
     private static let defaultSettings = ExposureSettings(
         iso: 1600,
         duration: CMTimeValue(2_000_000_000),
         bracketOffsets: [],
-        noiseReductionLevel: 0.7,
+        noiseReductionLevel: 0.85,
         autoISO: false,
-        aperture: 1.8,
-        exposureBias: 0.0
+        aperture: defaultAperture,
+        exposureBias: 0.0,
+        autoFocus: true,
+        autoAperture: true,
+        colorSaturation: 1.0
     )
     private let service = CameraServiceBridge()
     private let photoSaver = PhotoSaver()
@@ -49,6 +53,9 @@ final class CameraViewModel: ObservableObject {
     private var countdownTask: Task<Void, Never>?
     private let previewStabilizationEnabled = false
     private let previewDiagnosticsEnabled = false
+    private static let shutterPresetStops: [Double] = [0.125, 0.25, 0.5, 1, 2, 4, 8, 15, 30, 60]
+    private var lastAutoPreviewRefresh = Date.distantPast
+    private let autoPreviewRefreshInterval: TimeInterval = 2.0
 
     init() {
         service.delegate = self
@@ -100,9 +107,12 @@ final class CameraViewModel: ObservableObject {
     var isoValue: Double { Double(settings.iso) }
     var isAutoISOEnabled: Bool { settings.autoISO }
     var shutterSeconds: Double { Double(settings.duration) / 1_000_000_000.0 }
-    var noiseReduction: Double { Double(settings.noiseReductionLevel) }
     var apertureValue: Double { Double(settings.aperture) }
     var exposureBiasValue: Double { Double(settings.exposureBias) }
+    var saturationValue: Double { Double(settings.colorSaturation) }
+    var isAutofocusEnabled: Bool { settings.autoFocus }
+    var isAutoApertureEnabled: Bool { settings.autoAperture }
+    var shutterPresets: [Double] { Self.shutterPresetStops }
 
     func updateISO(_ value: Double) {
         updateSettings { $0.iso = Float(value) }
@@ -116,16 +126,32 @@ final class CameraViewModel: ObservableObject {
         updateSettings { $0.duration = CMTimeValue(seconds * 1_000_000_000.0) }
     }
 
-    func updateNoiseReduction(_ value: Double) {
-        updateSettings { $0.noiseReductionLevel = Float(value) }
-    }
-
     func updateAperture(_ value: Double) {
-        updateSettings { $0.aperture = Float(value) }
+        updateSettings {
+            $0.autoAperture = false
+            $0.aperture = Float(value)
+        }
     }
 
     func updateExposureBias(_ value: Double) {
         updateSettings { $0.exposureBias = Float(value) }
+    }
+
+    func updateSaturation(_ value: Double) {
+        updateSettings { $0.colorSaturation = Float(value) }
+    }
+
+    func setAutofocusEnabled(_ enabled: Bool) {
+        updateSettings { $0.autoFocus = enabled }
+    }
+
+    func setAutoApertureEnabled(_ enabled: Bool) {
+        updateSettings {
+            $0.autoAperture = enabled
+            if enabled {
+                $0.aperture = Self.defaultAperture
+            }
+        }
     }
 
     func toggleControlsPanel() {
@@ -174,6 +200,7 @@ final class CameraViewModel: ObservableObject {
             guard let self else { return }
             let previewSettings = self.makePreviewSettings(from: self.settings)
             self.service.applyPreview(settings: previewSettings)
+            self.recordPreviewRefresh()
         }
         exposureUpdateWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(60), execute: workItem)
@@ -182,6 +209,7 @@ final class CameraViewModel: ObservableObject {
     private func refreshPreviewExposure() {
         let previewSettings = makePreviewSettings(from: settings)
         service.applyPreview(settings: previewSettings)
+        recordPreviewRefresh()
     }
 
     private func handleExposureDiagnostics(with histogram: HistogramModel) {
@@ -205,6 +233,8 @@ final class CameraViewModel: ObservableObject {
                 service.updateHistogramThrottle(milliseconds: 80)
             }
         }
+
+        nudgeAutoPreviewIfNeeded()
     }
 
     private func performWhiteoutRecovery(reason: String) {
@@ -327,6 +357,17 @@ final class CameraViewModel: ObservableObject {
         preview.autoISO = true
         preview.iso = safetyLimits.minISO
         return preview
+    }
+
+    private func nudgeAutoPreviewIfNeeded() {
+        guard settings.autoISO else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastAutoPreviewRefresh) >= autoPreviewRefreshInterval else { return }
+        refreshPreviewExposure()
+    }
+
+    private func recordPreviewRefresh() {
+        lastAutoPreviewRefresh = Date()
     }
 
     deinit {

@@ -34,6 +34,7 @@ public final class CameraController: NSObject, ObservableObject {
     private var longExposureSession: LongExposureCaptureSession?
     private var longExposureCompletion: ((Result<Data, CameraError>) -> Void)?
     private let referenceAperture: Double = 1.8
+    private let focusLockLensPosition: Float = 1.0
 
     @Published public private(set) var state: PipelineState = .idle
     @Published public private(set) var lastExposure: ExposureSettings = ExposureSettings()
@@ -117,14 +118,19 @@ public final class CameraController: NSObject, ObservableObject {
     private var captureCompletion: ((Result<AVCapturePhoto, CameraError>) -> Void)?
 
     public func capture(settings: ExposureSettings, completion: @escaping (Result<AVCapturePhoto, CameraError>) -> Void) {
-        lastExposure = settings
         captureCompletion = completion
         sessionQueue.async {
-            if let error = self.applyExposureSettings(settings) {
+            guard let device = self.captureDevice else {
+                DispatchQueue.main.async { completion(.failure(.configurationFailed("Camera unavailable"))) }
+                return
+            }
+            let resolvedSettings = self.resolvedSettingsForCapture(settings, device: device)
+            if let error = self.applyExposureSettings(resolvedSettings) {
                 DispatchQueue.main.async { self.state = .error(error) }
                 self.captureCompletion?(.failure(error))
                 return
             }
+            self.lastExposure = resolvedSettings
 
             let photoSettings = AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.hevc])
             if let connection = self.photoOutput.connection(with: .video) {
@@ -142,15 +148,21 @@ public final class CameraController: NSObject, ObservableObject {
                 return
             }
 
-            self.lastExposure = settings
-            if let error = self.applyExposureSettings(settings, enableSubjectMonitoring: false) {
+            guard let device = self.captureDevice else {
+                DispatchQueue.main.async { completion(.failure(.configurationFailed("Camera unavailable"))) }
+                return
+            }
+
+            let resolvedSettings = self.resolvedSettingsForCapture(settings, device: device)
+            self.lastExposure = resolvedSettings
+            if let error = self.applyExposureSettings(resolvedSettings, enableSubjectMonitoring: false) {
                 DispatchQueue.main.async { completion(.failure(error)) }
                 return
             }
 
             self.longExposureCompletion = completion
             let frameBudget = max(12, Int(durationSeconds * 24.0))
-            self.longExposureSession = LongExposureCaptureSession(duration: durationSeconds, maxFrameCount: frameBudget, settings: settings) { [weak self] result in
+            self.longExposureSession = LongExposureCaptureSession(duration: durationSeconds, maxFrameCount: frameBudget, settings: resolvedSettings) { [weak self] result in
                 guard let self else { return }
                 self.sessionQueue.async {
                     self.longExposureSession = nil
@@ -268,7 +280,8 @@ extension CameraController {
             let maxDurationSeconds = CMTimeGetSeconds(device.activeFormat.maxExposureDuration)
             let requestedSeconds = Double(settings.duration) / 1_000_000_000.0
             let clampedSeconds = max(minDurationSeconds, min(maxDurationSeconds, requestedSeconds))
-            let compensationScale = exposureCompensationScale(for: settings)
+            let resolvedAperture = resolveApertureValue(for: device, settings: settings)
+            let compensationScale = exposureCompensationScale(aperture: resolvedAperture, bias: Double(settings.exposureBias))
             let distributed = distributeExposure(compensationScale: compensationScale, durationSeconds: clampedSeconds, device: device)
             let duration = CMTimeMakeWithSeconds(distributed.duration, preferredTimescale: 1_000_000_000)
 
@@ -278,10 +291,11 @@ extension CameraController {
             } else {
                 baseISO = clampISO(Float(settings.iso), for: device)
             }
-            let resolvedISO = clampISO(baseISO * Float(distributed.isoScale), for: device)
+            let adjustedISO = clampISO(baseISO * Float(distributed.isoScale), for: device)
 
-            device.setExposureModeCustom(duration: duration, iso: resolvedISO, completionHandler: nil)
-            applyOverexposureFallbackIfNeeded(device: device, iso: resolvedISO, durationSeconds: distributed.duration)
+            device.setExposureModeCustom(duration: duration, iso: adjustedISO, completionHandler: nil)
+            configureFocus(for: device, autoFocusEnabled: settings.autoFocus)
+            applyOverexposureFallbackIfNeeded(device: device, iso: adjustedISO, durationSeconds: distributed.duration)
             device.isSubjectAreaChangeMonitoringEnabled = enableSubjectMonitoring
             return nil
         } catch {
@@ -389,10 +403,10 @@ private extension CameraController {
         let isoScale: Double
     }
 
-    func exposureCompensationScale(for settings: ExposureSettings) -> Double {
-        let aperture = max(1.0, Double(settings.aperture))
-        let apertureScale = pow(referenceAperture / aperture, 2.0)
-        let biasScale = pow(2.0, Double(settings.exposureBias))
+    func exposureCompensationScale(aperture: Double, bias: Double) -> Double {
+        let safeAperture = max(1.0, aperture)
+        let apertureScale = pow(referenceAperture / safeAperture, 2.0)
+        let biasScale = pow(2.0, bias)
         let combined = apertureScale * biasScale
         return max(0.0625, min(combined, 8.0))
     }
@@ -417,6 +431,43 @@ private extension CameraController {
 
         let isoScale = max(0.25, min(4.0, remainingScale))
         return ExposureDistribution(duration: adjustedDuration, isoScale: isoScale)
+    }
+
+    func resolvedSettingsForCapture(_ settings: ExposureSettings, device: AVCaptureDevice) -> ExposureSettings {
+        var copy = settings
+        if settings.autoAperture {
+            let resolved = resolveApertureValue(for: device, settings: settings)
+            copy.aperture = Float(resolved)
+            copy.autoAperture = false
+        }
+        return copy
+    }
+
+    func resolveApertureValue(for device: AVCaptureDevice, settings: ExposureSettings) -> Double {
+        guard settings.autoAperture else { return clampAperture(Double(settings.aperture)) }
+        let offset = Double(device.exposureTargetOffset)
+        guard offset.isFinite else { return referenceAperture }
+        let stops = max(-1.5, min(1.5, -offset * 0.45))
+        let computed = referenceAperture * pow(2.0, stops)
+        return clampAperture(computed)
+    }
+
+    func clampAperture(_ value: Double) -> Double {
+        max(1.2, min(8.0, value))
+    }
+
+    func configureFocus(for device: AVCaptureDevice, autoFocusEnabled: Bool) {
+        if autoFocusEnabled {
+            if device.isFocusModeSupported(.continuousAutoFocus) {
+                device.focusMode = .continuousAutoFocus
+            } else if device.isFocusModeSupported(.autoFocus) {
+                device.focusMode = .autoFocus
+            }
+            return
+        }
+
+        guard device.isFocusModeSupported(.locked) else { return }
+        device.setFocusModeLocked(lensPosition: focusLockLensPosition, completionHandler: nil)
     }
 }
 #endif

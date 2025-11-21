@@ -4,9 +4,10 @@ import SwiftUI
 enum CameraControlKind: String, CaseIterable, Identifiable {
     case iso
     case shutter
-    case noise
     case aperture
     case bias
+    case saturation
+    case focus
 
     var id: String { rawValue }
 
@@ -14,9 +15,10 @@ enum CameraControlKind: String, CaseIterable, Identifiable {
         switch self {
         case .iso: return "circle.lefthalf.filled"
         case .shutter: return "timer"
-        case .noise: return "waveform"
         case .aperture: return "camera.aperture"
         case .bias: return "plusminus.circle"
+        case .saturation: return "drop.halffull"
+        case .focus: return "viewfinder.circle"
         }
     }
 
@@ -24,9 +26,10 @@ enum CameraControlKind: String, CaseIterable, Identifiable {
         switch self {
         case .iso: return "ISO"
         case .shutter: return "Shutter"
-        case .noise: return "Noise"
         case .aperture: return "F-Stop"
         case .bias: return "Exposure"
+        case .saturation: return "Saturation"
+        case .focus: return "Focus"
         }
     }
 
@@ -83,15 +86,30 @@ struct CameraControlsPanel: View {
             }
             return "ISO " + Int(viewModel.isoValue).formatted()
         case .shutter:
-            return String(format: "%.2fs", viewModel.shutterSeconds)
-        case .noise:
-            return String(format: "%d%%", Int(viewModel.noiseReduction * 100))
+            return Self.shutterDisplayText(viewModel.shutterSeconds)
         case .aperture:
             let aperture = viewModel.apertureValue
             return String(format: "f/%.1f", aperture)
         case .bias:
             return String(format: "%+.1f EV", viewModel.exposureBiasValue)
+        case .saturation:
+            return String(format: "%d%%", Int(viewModel.saturationValue * 100))
+        case .focus:
+            return viewModel.isAutofocusEnabled ? "AUTO" : "LOCK"
         }
+    }
+}
+
+private extension CameraControlKind {
+    static func shutterDisplayText(_ seconds: Double) -> String {
+        if seconds >= 1 {
+            if seconds.truncatingRemainder(dividingBy: 1) == 0 {
+                return String(format: "%.0fs", seconds)
+            }
+            return String(format: "%.1fs", seconds)
+        }
+        let denominator = max(1, Int(round(1.0 / seconds)))
+        return "1/\(denominator)s"
     }
 }
 

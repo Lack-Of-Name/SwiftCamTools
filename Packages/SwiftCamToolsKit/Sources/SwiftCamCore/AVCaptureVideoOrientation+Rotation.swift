@@ -15,8 +15,17 @@ public enum CameraOrientation: String, Codable, CaseIterable, Equatable {
         switch self {
         case .portrait: return 90
         case .portraitUpsideDown: return 270
-        case .landscapeRight: return 180
-        case .landscapeLeft: return 0
+        case .landscapeRight: return 0
+        case .landscapeLeft: return 180
+        }
+    }
+
+    public var isLandscape: Bool {
+        switch self {
+        case .landscapeLeft, .landscapeRight:
+            return true
+        default:
+            return false
         }
     }
 
