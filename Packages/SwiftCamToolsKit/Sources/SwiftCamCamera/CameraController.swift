@@ -178,7 +178,9 @@ public final class CameraController: NSObject, ObservableObject {
             
             let currentISO = device.iso
             let currentDuration = CMTimeGetSeconds(device.exposureDuration)
-            let safeShutterSpeed = 1.0 / 12.0
+            // "Smart" Handheld Limit: 1/3s allows significantly more light than 1/12s.
+            // We rely on the stacking algorithm's sharpness weighting to reject motion blur.
+            let safeShutterSpeed = 1.0 / 3.0
             let maxISO = device.activeFormat.maxISO
             
             var targetISO: Float

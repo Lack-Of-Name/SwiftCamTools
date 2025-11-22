@@ -25,6 +25,7 @@ final class LongExposureCaptureSession {
     
     // Accumulation
     private var accumulator: CIImage?
+    private var totalWeight: Double = 0.0
     private var referencePixelBuffer: CVPixelBuffer?
     
     // Alignment
@@ -103,7 +104,21 @@ final class LongExposureCaptureSession {
                 CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
                 
                 self.referencePixelBuffer = copy
-                self.accumulator = inputImage
+                
+                // Initial weight for the reference frame
+                let sharpness = self.calculateSharpness(of: inputImage)
+                let weight = pow(Double(sharpness), 2.0) // Square for stronger differentiation
+                
+                // Accumulate weighted reference
+                let weightedImage = inputImage.applyingFilter("CIColorMatrix", parameters: [
+                    "inputRVector": CIVector(x: CGFloat(weight), y: 0, z: 0, w: 0),
+                    "inputGVector": CIVector(x: 0, y: CGFloat(weight), z: 0, w: 0),
+                    "inputBVector": CIVector(x: 0, y: 0, z: CGFloat(weight), w: 0),
+                    "inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(weight))
+                ])
+                
+                self.accumulator = weightedImage
+                self.totalWeight = weight
                 self.frameCount = 1
             }
             return
@@ -115,13 +130,44 @@ final class LongExposureCaptureSession {
             return
         }
         
-        // Accumulate
+        // Calculate Sharpness Weight
+        let sharpness = calculateSharpness(of: alignedImage)
+        let weight = pow(Double(sharpness), 2.0)
+        
+        // Accumulate Weighted
         if let existing = accumulator {
-            self.accumulator = existing.applyingFilter("CIAdditionCompositing", parameters: [
-                kCIInputBackgroundImageKey: alignedImage
+            let weightedImage = alignedImage.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: CGFloat(weight), y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: CGFloat(weight), z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: CGFloat(weight), w: 0),
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(weight))
             ])
+            
+            self.accumulator = existing.applyingFilter("CIAdditionCompositing", parameters: [
+                kCIInputBackgroundImageKey: weightedImage
+            ])
+            self.totalWeight += weight
             self.frameCount += 1
         }
+    }
+    
+    private func calculateSharpness(of image: CIImage) -> Float {
+        // Use the "Edges" filter to find high frequency components
+        let edges = image.applyingFilter("CIEdges", parameters: [
+            kCIInputIntensityKey: 2.0
+        ])
+        
+        // Average the edge energy
+        let extent = image.extent
+        let vec = CIVector(x: extent.origin.x, y: extent.origin.y, z: extent.size.width, w: extent.size.height)
+        let average = edges.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: vec])
+        
+        var bitmap = [UInt8](repeating: 0, count: 4)
+        context.render(average, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
+        
+        // Luma of the edges
+        let sharpness = (Double(bitmap[0]) + Double(bitmap[1]) + Double(bitmap[2])) / 3.0 / 255.0
+        return Float(sharpness)
     }
     
     private func align(image: CIImage, to reference: CVPixelBuffer) -> CIImage? {
@@ -154,19 +200,19 @@ final class LongExposureCaptureSession {
     }
 
     private func finalizeCapture() {
-        guard let finalAccumulator = accumulator, frameCount > 0 else {
+        guard let finalAccumulator = accumulator, frameCount > 0, totalWeight > 0 else {
             completion(.failure(.captureFailed("No frames captured")))
             return
         }
         
-        // 1. Average (Mean Stacking)
-        // This reduces random noise by sqrt(N)
-        let divisor = CGFloat(frameCount)
+        // 1. Normalize (Weighted Average)
+        // Divide the accumulated sum by the total weight
+        let divisor = CGFloat(totalWeight)
         let averaged = finalAccumulator.applyingFilter("CIColorMatrix", parameters: [
             "inputRVector": CIVector(x: 1.0/divisor, y: 0, z: 0, w: 0),
             "inputGVector": CIVector(x: 0, y: 1.0/divisor, z: 0, w: 0),
             "inputBVector": CIVector(x: 0, y: 0, z: 1.0/divisor, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1)
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1) // Alpha is usually 1.0, but we weighted it too.
         ])
         
         // 2. Crop to valid area

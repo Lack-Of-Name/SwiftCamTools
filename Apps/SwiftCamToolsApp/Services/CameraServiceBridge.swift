@@ -91,5 +91,9 @@ final class CameraServiceBridge: ObservableObject {
         pipeline.setHistogramEnabled(false)
         pipeline.updateHistogramThrottle(interval: 260)
     }
+
+    func applyNightPresets(style: NightCaptureStyle) {
+        pipeline.applyNightPresets(style: style)
+    }
 }
 #endif

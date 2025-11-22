@@ -69,11 +69,48 @@ struct ControlSliderSheet: View {
             )
         case .longExposure:
             return AnyView(
-                LogarithmicSlider(
-                    value: Binding(get: { viewModel.longExposureSeconds }, set: { viewModel.updateLongExposure(seconds: $0) }),
-                    range: viewModel.longExposureRange,
-                    formatter: { String(format: "%.1fs", $0) }
-                )
+                VStack(spacing: 20) {
+                    Toggle(isOn: Binding(get: { viewModel.isAutoNightDurationEnabled }, set: { viewModel.setAutoNightDurationEnabled($0) })) {
+                        HStack {
+                            Text("Auto Duration")
+                                .font(.headline)
+                            Spacer()
+                            if viewModel.isAutoNightDurationEnabled {
+                                Text("AUTO")
+                                    .font(.caption2.weight(.bold))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.blue.opacity(0.2), in: Capsule())
+                                    .foregroundStyle(.blue)
+                            }
+                        }
+                    }
+                    .toggleStyle(SwitchToggleStyle(tint: .blue))
+
+                    HStack(spacing: 12) {
+                        Toggle("Deep Exposure", isOn: Binding(
+                            get: { viewModel.nightCaptureStyle == .deepExposure },
+                            set: { if $0 { viewModel.setNightCaptureStyle(.deepExposure) } else { viewModel.setNightCaptureStyle(.off) } }
+                        ))
+                        .toggleStyle(.button)
+                        .tint(viewModel.nightCaptureStyle == .deepExposure ? .blue : .secondary)
+                        
+                        Toggle("Light Trails", isOn: Binding(
+                            get: { viewModel.nightCaptureStyle == .lightTrails },
+                            set: { if $0 { viewModel.setNightCaptureStyle(.lightTrails) } else { viewModel.setNightCaptureStyle(.off) } }
+                        ))
+                        .toggleStyle(.button)
+                        .tint(viewModel.nightCaptureStyle == .lightTrails ? .purple : .secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    LogarithmicSlider(
+                        value: Binding(get: { viewModel.longExposureSeconds }, set: { viewModel.updateLongExposure(seconds: $0) }),
+                        range: viewModel.longExposureRange,
+                        formatter: { String(format: "%.1fs", $0) },
+                        isDisabled: viewModel.nightCaptureStyle == .off || viewModel.isAutoNightDurationEnabled
+                    )
+                }
             )
         case .aperture:
             return AnyView(

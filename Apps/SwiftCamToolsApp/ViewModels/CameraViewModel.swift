@@ -27,6 +27,8 @@ final class CameraViewModel: ObservableObject {
     @Published var countdownMode: CaptureCountdown = .off
     @Published var countdownSecondsRemaining: Int?
     @Published var previewOrientation: CameraOrientation = .portrait
+    @Published var nightCaptureStyle: NightCaptureStyle = .off
+    @Published var isAutoNightDurationEnabled: Bool = true
 
     var session: AVCaptureSession? { service.session }
 

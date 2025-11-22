@@ -197,5 +197,9 @@ public final class CapturePipeline: ObservableObject {
     public var maxISO: Float { controller.maxISO }
     public var minExposureDuration: Double { controller.minExposureDuration }
     public var maxExposureDuration: Double { controller.maxSupportedExposureSeconds }
+    
+    public func applyNightPresets(style: NightCaptureStyle) {
+        controller.applyNightPresets(style: style)
+    }
 }
 #endif
