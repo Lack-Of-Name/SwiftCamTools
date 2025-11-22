@@ -29,6 +29,11 @@ final class CameraServiceBridge: ObservableObject {
         pipeline.controller.captureSession
     }
 
+    var minISO: Float { pipeline.minISO }
+    var maxISO: Float { pipeline.maxISO }
+    var minExposureDuration: Double { pipeline.minExposureDuration }
+    var maxExposureDuration: Double { pipeline.maxExposureDuration }
+
     init() {
         pipeline = CapturePipeline()
         pipeline.$histogram

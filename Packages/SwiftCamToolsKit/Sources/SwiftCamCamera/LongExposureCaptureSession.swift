@@ -201,10 +201,11 @@ final class LongExposureCaptureSession {
         // Target a "night" exposure (not too bright, e.g., 0.18 - 0.25 middle gray)
         // If it's very dark (e.g. 0.05), boost it.
         let targetLuma = 0.20
-        if avgLuma > 0.01 && avgLuma < targetLuma {
+        // Always boost if below target, even if very dark (remove the > 0.01 check)
+        if avgLuma < targetLuma && avgLuma > 0.0001 {
             let boost = targetLuma / avgLuma
-            // Cap the boost to avoid noise explosion (e.g. max 3x)
-            let safeBoost = min(3.0, boost)
+            // Cap the boost to avoid noise explosion (e.g. max 4x = 2 stops)
+            let safeBoost = min(4.0, boost)
             processed = processed.applyingFilter("CIExposureAdjust", parameters: [
                 kCIInputEVKey: log2(safeBoost)
             ])

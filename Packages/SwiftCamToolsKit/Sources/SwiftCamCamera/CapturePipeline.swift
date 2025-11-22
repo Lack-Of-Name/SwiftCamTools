@@ -136,5 +136,10 @@ public final class CapturePipeline: ObservableObject {
             }
         }
     }
+
+    public var minISO: Float { controller.minISO }
+    public var maxISO: Float { controller.maxISO }
+    public var minExposureDuration: Double { controller.minExposureDuration }
+    public var maxExposureDuration: Double { controller.maxSupportedExposureSeconds }
 }
 #endif

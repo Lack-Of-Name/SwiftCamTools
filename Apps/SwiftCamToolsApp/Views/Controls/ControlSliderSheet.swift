@@ -53,7 +53,7 @@ struct ControlSliderSheet: View {
 
                     ControlValueSlider(
                         value: Binding(get: { viewModel.isoValue }, set: { viewModel.updateISO($0) }),
-                        range: 100...6400,
+                        range: viewModel.isoRange,
                         formatter: { "ISO " + Int($0).formatted() },
                         isDisabled: viewModel.isAutoISOEnabled
                     )

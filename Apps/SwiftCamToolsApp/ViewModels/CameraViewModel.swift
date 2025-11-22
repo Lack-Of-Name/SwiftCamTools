@@ -66,6 +66,25 @@ final class CameraViewModel: ObservableObject {
     func prepareSession() async {
         await service.prepare()
         service.configureLowPowerPreview()
+        
+        // Update safety limits based on hardware
+        let minISO = service.minISO
+        let maxISO = service.maxISO
+        let minDuration = service.minExposureDuration
+        let maxDuration = service.maxExposureDuration
+        
+        self.safetyLimits = ExposureSafetyLimits(
+            minISO: minISO,
+            maxISO: maxISO,
+            minShutterSeconds: minDuration,
+            maxShutterSeconds: maxDuration,
+            previewMaxShutterSeconds: 0.08,
+            highlightRatioThreshold: 0.88,
+            recoveryFrameBudget: 4,
+            recoveryISO: 400,
+            recoveryShutterSeconds: 0.5
+        )
+        
         refreshPreviewExposure()
     }
 
@@ -112,7 +131,25 @@ final class CameraViewModel: ObservableObject {
     var saturationValue: Double { Double(settings.colorSaturation) }
     var isAutofocusEnabled: Bool { settings.autoFocus }
     var isAutoApertureEnabled: Bool { settings.autoAperture }
-    var shutterPresets: [Double] { Self.shutterPresetStops }
+    
+    var shutterPresets: [Double] {
+        let min = service.minExposureDuration
+        let max = service.maxExposureDuration
+        
+        // Extended range of standard stops
+        let stops = [
+            1.0/8000.0, 1.0/4000.0, 1.0/2000.0, 1.0/1000.0, 1.0/500.0, 1.0/250.0, 1.0/125.0, 1.0/60.0, 1.0/30.0, 1.0/15.0,
+            0.125, 0.25, 0.5, 1, 2, 4, 8, 15, 30, 60
+        ]
+        
+        // Filter to device capabilities, but always include at least one valid value
+        let valid = stops.filter { $0 >= min && $0 <= max }
+        return valid.isEmpty ? [min] : valid
+    }
+    
+    var isoRange: ClosedRange<Double> {
+        Double(service.minISO)...Double(service.maxISO)
+    }
 
     func updateISO(_ value: Double) {
         updateSettings { $0.iso = Float(value) }
