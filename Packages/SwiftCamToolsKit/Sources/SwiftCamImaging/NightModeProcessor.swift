@@ -228,30 +228,30 @@ public class NightModeProcessor {
 
         if #available(iOS 14.0, macOS 11.0, *) {
             var outBuffer = vImage_Buffer()
-            let initError = vImageBuffer_Init(&outBuffer, height, width, 32, vImage_Flags(kvImageNoFlags))
-            guard initError == kvImageNoError, let outData = outBuffer.data else {
+            let initStatus = vImageBuffer_Init(&outBuffer, height, width, 32, vImage_Flags(kvImageNoFlags))
+            guard initStatus == kvImageNoError, let outData = outBuffer.data else {
                 return pixelBuffer
             }
             defer { free(outData) }
 
-            let tilesX = vImagePixelCount(8)
-            let tilesY = vImagePixelCount(8)
+            let tileWidth: vImagePixelCount = 8
+            let tileHeight: vImagePixelCount = 8
             let clipLimit: Float = 3.0
-            let error = vImageContrastLimitedAdaptiveHistogramEqualization_ARGB8888(
+
+            let claheError = vImageContrastLimitedAdaptiveHistogramEqualization_ARGB8888(
                 &inBuffer,
                 &outBuffer,
-                nil,
-                0,
-                tilesX,
-                tilesY,
+                UnsafeMutableRawPointer?(nil),
+                tileWidth,
+                tileHeight,
                 clipLimit,
                 vImage_Flags(kvImageLeaveAlphaUnchanged)
             )
 
-            if error == kvImageNoError {
+            if claheError == kvImageNoError {
                 _ = vImageCopyBuffer(&outBuffer, &inBuffer, 4, vImage_Flags(kvImageNoFlags))
             } else {
-                print("CLAHE failed with error: \(error)")
+                print("CLAHE failed with error: \(claheError)")
             }
         } else {
             let error = vImageEqualization_ARGB8888(&inBuffer, &inBuffer, vImage_Flags(kvImageLeaveAlphaUnchanged))
