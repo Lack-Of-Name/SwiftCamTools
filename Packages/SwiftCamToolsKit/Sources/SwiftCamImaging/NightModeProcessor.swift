@@ -8,6 +8,9 @@ import MetalPerformanceShaders
 import Vision
 import Accelerate
 import SwiftCamCore
+#if canImport(MetalPetal)
+import MetalPetal
+#endif
 
 public class NightModeProcessor {
     
@@ -15,6 +18,12 @@ public class NightModeProcessor {
     private let commandQueue: MTLCommandQueue
     private var averagePipeline: MTLComputePipelineState?
     private var maxBlendPipeline: MTLComputePipelineState?
+    
+    #if canImport(MetalPetal)
+    private lazy var mtiContext: MTIContext? = {
+        try? MTIContext(device: device)
+    }()
+    #endif
     
     private var accumulatorTexture: MTLTexture?
     private var frameCount: Int = 0
@@ -215,6 +224,25 @@ public class NightModeProcessor {
     // MARK: - Helpers
     
     private func applyCLAHE(to pixelBuffer: CVPixelBuffer) -> CVPixelBuffer? {
+        #if canImport(MetalPetal)
+        if let context = mtiContext {
+            let image = MTIImage(cvPixelBuffer: pixelBuffer, alphaType: .alphaIsOne)
+            let filter = MTICLAHEFilter()
+            filter.inputImage = image
+            filter.clipLimit = 3.0
+            filter.tileGridSize = MTIVector(x: 8, y: 8)
+            
+            do {
+                if let outputImage = filter.outputImage {
+                    try context.render(outputImage, to: pixelBuffer)
+                    return pixelBuffer
+                }
+            } catch {
+                print("MetalPetal CLAHE failed: \(error)")
+            }
+        }
+        #endif
+
         CVPixelBufferLockBaseAddress(pixelBuffer, [])
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
         
