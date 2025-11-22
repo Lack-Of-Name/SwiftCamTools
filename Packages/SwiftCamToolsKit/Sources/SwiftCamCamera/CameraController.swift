@@ -382,7 +382,7 @@ extension CameraController {
 
             device.setExposureModeCustom(duration: duration, iso: adjustedISO, completionHandler: nil)
             configureFocus(for: device, autoFocusEnabled: settings.autoFocus)
-            applyOverexposureFallbackIfNeeded(device: device, iso: adjustedISO, durationSeconds: distributed.duration)
+            // applyOverexposureFallbackIfNeeded(device: device, iso: adjustedISO, durationSeconds: distributed.duration)
             device.isSubjectAreaChangeMonitoringEnabled = enableSubjectMonitoring
             return nil
         } catch {

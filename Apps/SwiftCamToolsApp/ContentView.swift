@@ -12,6 +12,7 @@ struct ContentView: View {
     var body: some View {
         ZStack {
             CameraPreviewView(session: viewModel.session, orientation: viewModel.previewOrientation)
+                .saturation(Double(viewModel.settings.colorSaturation))
                 .ignoresSafeArea()
 
             if viewModel.showGridOverlay {

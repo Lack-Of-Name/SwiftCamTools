@@ -1,10 +1,11 @@
-#if canImport(AVFoundation) && canImport(Combine) && canImport(CoreVideo)
+#if canImport(AVFoundation) && canImport(Combine) && canImport(CoreVideo) && canImport(CoreImage)
 import Foundation
 import AVFoundation
 import Combine
 import CoreVideo
 import CoreMedia
 import SwiftCamCore
+import CoreImage
 
 public final class CapturePipeline: ObservableObject {
     public let controller: CameraController
@@ -57,12 +58,67 @@ public final class CapturePipeline: ObservableObject {
                         completion(.failure(.captureFailed("Unable to read captured photo data.")))
                         return
                     }
-                    completion(.success(data))
+                    
+                    // Apply post-processing if needed (Saturation, Noise Reduction)
+                    if let processedData = self.processCapturedPhoto(data, settings: captureSettings) {
+                        completion(.success(processedData))
+                    } else {
+                        completion(.success(data))
+                    }
                 case .failure(let error):
                     completion(.failure(error))
                 }
             }
         }
+    }
+
+    private func processCapturedPhoto(_ data: Data, settings: ExposureSettings) -> Data? {
+        // Check if processing is needed
+        // Default saturation is 1.0. Default noise reduction is 0.6 (but let's assume user wants control).
+        // If saturation is 1.0 and noise reduction is "default" (whatever that means for the user), maybe skip?
+        // But since the user complained, let's apply it if it deviates or if we want to enforce the slider.
+        // The slider for noise reduction goes from 0.0 to 1.0.
+        // If the user sets it to 0, they probably want NO noise reduction (or minimal).
+        // If they set it to 1, they want MAX.
+        
+        // Since we can't easily know what the "default" embedded in the JPEG is, 
+        // applying more noise reduction on top might be okay if the user requested it.
+        // But applying saturation is definitely needed if != 1.0.
+        
+        let needsSaturation = abs(settings.colorSaturation - 1.0) > 0.01
+        // We only apply extra noise reduction if requested explicitly high, or maybe always if we want to support the slider?
+        // The user said "sliders change nothing". So we should probably apply it.
+        // However, applying CINoiseReduction is expensive and might blur details.
+        // Let's only apply if > 0.
+        let needsNoiseReduction = settings.noiseReductionLevel > 0.01
+        
+        guard needsSaturation || needsNoiseReduction else { return nil }
+        
+        guard let ciImage = CIImage(data: data) else { return nil }
+        var processed = ciImage
+        
+        if needsNoiseReduction {
+            // Map 0.0-1.0 to reasonable inputNoiseLevel. Default is 0.02. Max is usually around 0.1 for usable results.
+            let level = Double(settings.noiseReductionLevel) * 0.05
+            let sharpness = 0.4 // Default
+            processed = processed.applyingFilter("CINoiseReduction", parameters: [
+                "inputNoiseLevel": level,
+                "inputSharpness": sharpness
+            ])
+        }
+        
+        if needsSaturation {
+            processed = processed.applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: settings.colorSaturation
+            ])
+        }
+        
+        let context = CIContext()
+        // Attempt to preserve metadata? CIContext.jpegRepresentation doesn't preserve all metadata automatically unless passed.
+        // But we don't have easy access to the metadata dict from here without parsing.
+        // CIImage(data:) reads properties.
+        let colorSpace = processed.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        return context.jpegRepresentation(of: processed, colorSpace: colorSpace, options: [:])
     }
 
     public func updateHistogramThrottle(interval milliseconds: Double) {

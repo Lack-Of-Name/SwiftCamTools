@@ -32,11 +32,11 @@ final class CameraViewModel: ObservableObject {
 
     private static let defaultAperture: Float = 1.8
     private static let defaultSettings = ExposureSettings(
-        iso: 1600,
-        duration: CMTimeValue(2_000_000_000),
+        iso: 100,
+        duration: CMTimeValue(1_000_000_000 / 60),
         bracketOffsets: [],
         noiseReductionLevel: 0.85,
-        autoISO: false,
+        autoISO: true,
         aperture: defaultAperture,
         exposureBias: 0.0,
         autoFocus: true,
@@ -413,11 +413,21 @@ final class CameraViewModel: ObservableObject {
 #endif
     }
 
-    private func makePreviewSettings(from _: ExposureSettings) -> ExposureSettings {
-        var preview = ExposureSettings()
-        preview.duration = safetyLimits.clampPreview(duration: secondsToDuration(1.0 / 60.0))
-        preview.autoISO = true
-        preview.iso = safetyLimits.minISO
+    private func makePreviewSettings(from source: ExposureSettings) -> ExposureSettings {
+        var preview = source
+        
+        // Clamp duration for responsive preview
+        let originalDuration = Double(source.duration) / 1_000_000_000.0
+        let previewDuration = safetyLimits.clampPreview(durationSeconds: originalDuration)
+        preview.duration = secondsToDuration(previewDuration)
+        
+        // If manual exposure, compensate ISO for the shorter preview shutter
+        if !source.autoISO {
+            let exposureFactor = originalDuration / previewDuration
+            let compensatedISO = Float(source.iso) * Float(exposureFactor)
+            preview.iso = safetyLimits.clamp(iso: compensatedISO)
+        }
+        
         return preview
     }
 

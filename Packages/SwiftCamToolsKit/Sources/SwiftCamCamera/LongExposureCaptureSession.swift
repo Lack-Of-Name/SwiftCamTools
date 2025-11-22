@@ -182,8 +182,9 @@ final class LongExposureCaptureSession {
         // A. Noise Reduction (Chroma first)
         // Reduce color noise which is common in night shots
         // We assume the stacking handled most luma noise.
+        let noiseLevel = Double(settings.noiseReductionLevel) * 0.05
         var processed = cropped.applyingFilter("CINoiseReduction", parameters: [
-            "inputNoiseLevel": 0.03,
+            "inputNoiseLevel": noiseLevel,
             "inputSharpness": 0.4
         ])
         
@@ -200,7 +201,10 @@ final class LongExposureCaptureSession {
         
         // Target a "night" exposure (not too bright, e.g., 0.18 - 0.25 middle gray)
         // If it's very dark (e.g. 0.05), boost it.
-        let targetLuma = 0.20
+        // Adjust target based on exposure bias
+        let biasScale = pow(2.0, Double(settings.exposureBias))
+        let targetLuma = 0.20 * biasScale
+        
         // Always boost if below target, even if very dark (remove the > 0.01 check)
         if avgLuma < targetLuma && avgLuma > 0.0001 {
             let boost = targetLuma / avgLuma
@@ -221,6 +225,10 @@ final class LongExposureCaptureSession {
         // D. Color Grading
         // Night shots often look too yellow/orange (sodium lights). 
         // A slight cooling filter or just vibrance can help.
+        processed = processed.applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: settings.colorSaturation
+        ])
+        
         processed = processed.applyingFilter("CIVibrance", parameters: [
             "inputAmount": 0.1 // Subtle vibrance
         ])
