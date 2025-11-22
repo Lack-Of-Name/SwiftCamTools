@@ -224,21 +224,40 @@ public class NightModeProcessor {
         let height = vImagePixelCount(CVPixelBufferGetHeight(pixelBuffer))
         let rowBytes = CVPixelBufferGetBytesPerRow(pixelBuffer)
         
-        var buffer = vImage_Buffer(data: baseAddress, height: height, width: width, rowBytes: rowBytes)
-        var error: vImage_Error = kvImageNoError
-        
-        if #available(iOS 17.0, macOS 14.0, *) {
-            // Use vImage's CLAHE utility where available to boost midtones without crushing highlights.
-            var clipLimit: Float = 2.0
-            var tiles: UInt32 = 8
-            error = vImageContrastLimitedEqualization_ARGB8888(&buffer, &buffer, nil, &clipLimit, &tiles, vImage_Flags(kvImageLeaveAlphaUnchanged))
+        var inBuffer = vImage_Buffer(data: baseAddress, height: height, width: width, rowBytes: rowBytes)
+
+        if #available(iOS 14.0, macOS 11.0, *) {
+            var outBuffer = vImage_Buffer()
+            let initError = vImageBuffer_Init(&outBuffer, height, width, 32, vImage_Flags(kvImageNoFlags))
+            guard initError == kvImageNoError, let outData = outBuffer.data else {
+                return pixelBuffer
+            }
+            defer { free(outData) }
+
+            let tilesX = vImagePixelCount(8)
+            let tilesY = vImagePixelCount(8)
+            let clipLimit: Float = 3.0
+            let error = vImageContrastLimitedAdaptiveHistogramEqualization_ARGB8888(
+                &inBuffer,
+                &outBuffer,
+                nil,
+                0,
+                tilesX,
+                tilesY,
+                clipLimit,
+                vImage_Flags(kvImageLeaveAlphaUnchanged)
+            )
+
+            if error == kvImageNoError {
+                _ = vImageCopyBuffer(&outBuffer, &inBuffer, 4, vImage_Flags(kvImageNoFlags))
+            } else {
+                print("CLAHE failed with error: \(error)")
+            }
         } else {
-            // Fallback to standard histogram equalization on older OS versions.
-            error = vImageEqualization_ARGB8888(&buffer, &buffer, vImage_Flags(kvImageLeaveAlphaUnchanged))
-        }
-        
-        if error != kvImageNoError {
-            print("vImage CLAHE error: \(error)")
+            let error = vImageEqualization_ARGB8888(&inBuffer, &inBuffer, vImage_Flags(kvImageLeaveAlphaUnchanged))
+            if error != kvImageNoError {
+                print("Equalization failed with error: \(error)")
+            }
         }
         
         return pixelBuffer
