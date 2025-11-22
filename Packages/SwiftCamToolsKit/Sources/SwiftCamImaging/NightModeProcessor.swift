@@ -1,4 +1,6 @@
 import Foundation
+
+#if canImport(AVFoundation) && canImport(CoreMedia) && canImport(CoreVideo) && canImport(Metal) && canImport(Vision)
 import CoreMedia
 import CoreVideo
 import Metal
@@ -34,7 +36,7 @@ public class NightModeProcessor {
         try loadMetalLibrary()
     }
     
-    private func loadMetalLibrary() try {
+    private func loadMetalLibrary() throws {
         // Load the default library from the bundle
         let bundle = Bundle.module
         guard let library = try? device.makeDefaultLibrary(bundle: bundle) else {
@@ -124,9 +126,10 @@ public class NightModeProcessor {
                         // Use MPSImageBilinearScale for translation
                         let scale = MPSImageBilinearScale(device: device)
                         var scaleTransform = MPSScaleTransform(scaleX: 1.0, scaleY: 1.0, translateX: Double(transform.tx), translateY: Double(transform.ty))
-                        
                         withUnsafePointer(to: &scaleTransform) { ptr in
-                            scale.encode(commandBuffer: commandBuffer, sourceTexture: inputTexture, destinationTexture: aligned, scaleTransform: ptr)
+                            scale.scaleTransform = ptr
+                            scale.encode(commandBuffer: commandBuffer, sourceTexture: inputTexture, destinationTexture: aligned)
+                            scale.scaleTransform = nil
                         }
                         sourceTexture = aligned
                     } else {
@@ -212,9 +215,6 @@ public class NightModeProcessor {
     // MARK: - Helpers
     
     private func applyCLAHE(to pixelBuffer: CVPixelBuffer) -> CVPixelBuffer? {
-        // vImage CLAHE implementation
-        // Lock base address, create vImage_Buffer, apply CLAHE, unlock.
-        
         CVPixelBufferLockBaseAddress(pixelBuffer, [])
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
         
@@ -225,19 +225,17 @@ public class NightModeProcessor {
         let rowBytes = CVPixelBufferGetBytesPerRow(pixelBuffer)
         
         var buffer = vImage_Buffer(data: baseAddress, height: height, width: width, rowBytes: rowBytes)
+        var error: vImage_Error = kvImageNoError
         
-        // CLAHE usually works on Luma or single channel. For BGRA, we might need to convert to Lab or YCbCr, apply to L/Y, and convert back.
-        // Or just apply to RGB channels if acceptable.
-        // For this example, we'll assume a simple histogram equalization on the buffer directly (which might shift colors) 
-        // or skip complex color space conversion for brevity unless strictly required.
-        // The prompt asks for `vImageContrastLimitedAdaptiveHistogramEqualization`.
-        
-        // Let's assume we are working with a format vImage supports directly or we do a quick YCbCr conversion.
-        // Since this is a "Senior iOS Camera Architect" task, I should probably note that CLAHE on RGB is bad.
-        // But implementing full RGB->LAB->CLAHE->RGB is a lot of boilerplate.
-        // I will leave a placeholder or a simplified version.
-        
-        let error = vImageContrastLimitedAdaptiveHistogramEqualization_ARGB8888(&buffer, &buffer, nil, 0, 0)
+        if #available(iOS 17.0, macOS 14.0, *) {
+            // Use vImage's CLAHE utility where available to boost midtones without crushing highlights.
+            var clipLimit: Float = 2.0
+            var tiles: UInt32 = 8
+            error = vImageContrastLimitedEqualization_ARGB8888(&buffer, &buffer, nil, &clipLimit, &tiles, vImage_Flags(kvImageLeaveAlphaUnchanged))
+        } else {
+            // Fallback to standard histogram equalization on older OS versions.
+            error = vImageEqualization_ARGB8888(&buffer, &buffer, vImage_Flags(kvImageLeaveAlphaUnchanged))
+        }
         
         if error != kvImageNoError {
             print("vImage CLAHE error: \(error)")
@@ -299,3 +297,4 @@ public class NightModeProcessor {
         return buffer
     }
 }
+#endif

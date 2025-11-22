@@ -1,3 +1,4 @@
+#if canImport(AVFoundation)
 import AVFoundation
 import SwiftCamCore
 
@@ -41,3 +42,4 @@ public extension AVCaptureDevice {
         }
     }
 }
+#endif
