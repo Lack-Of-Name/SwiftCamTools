@@ -149,7 +149,7 @@ final class CameraViewModel: ObservableObject {
         
         // Always return at least one value. If valid is empty, return the current setting or min.
         if valid.isEmpty {
-            return [max(min, min(shutterSeconds, max))]
+            return [Swift.max(min, Swift.min(shutterSeconds, max))]
         }
         return valid
     }
