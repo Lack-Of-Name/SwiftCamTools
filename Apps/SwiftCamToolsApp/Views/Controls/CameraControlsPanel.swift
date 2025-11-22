@@ -99,6 +99,8 @@ struct CameraControlsPanel: View {
             return String(format: "%d%%", Int(viewModel.saturationValue * 100))
         case .focus:
             return viewModel.isAutofocusEnabled ? "AUTO" : "LOCK"
+        case .longExposure:
+            return String(format: "%.0fs", viewModel.longExposureSeconds)
         }
     }
 }

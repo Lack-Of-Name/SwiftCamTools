@@ -71,7 +71,6 @@ final class CameraViewModel: ObservableObject {
         let minISO = service.minISO
         let maxISO = service.maxISO
         let minDuration = service.minExposureDuration
-        let maxDuration = service.maxExposureDuration
         
         self.safetyLimits = ExposureSafetyLimits(
             minISO: minISO,
@@ -182,6 +181,10 @@ final class CameraViewModel: ObservableObject {
     }
 
     func updateShutter(seconds: Double) {
+        updateSettings { $0.duration = CMTimeValue(seconds * 1_000_000_000.0) }
+    }
+
+    func updateLongExposure(seconds: Double) {
         updateSettings { $0.duration = CMTimeValue(seconds * 1_000_000_000.0) }
     }
 
