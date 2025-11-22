@@ -171,14 +171,6 @@ final class CameraViewModel: ObservableObject {
         return min...Swift.max(min + 0.0001, max)
     }
 
-    var longExposureSeconds: Double {
-        Double(settings.duration) / 1_000_000_000.0
-    }
-    
-    var longExposureRange: ClosedRange<Double> {
-        1.0...30.0
-    }
-
     func updateISO(_ value: Double) {
         updateSettings { $0.iso = Float(value) }
     }
@@ -188,10 +180,6 @@ final class CameraViewModel: ObservableObject {
     }
 
     func updateShutter(seconds: Double) {
-        updateSettings { $0.duration = CMTimeValue(seconds * 1_000_000_000.0) }
-    }
-
-    func updateLongExposure(seconds: Double) {
         updateSettings { $0.duration = CMTimeValue(seconds * 1_000_000_000.0) }
     }
 
@@ -232,6 +220,27 @@ final class CameraViewModel: ObservableObject {
     func resetManualControls() {
         settings = Self.defaultSettings
         schedulePreviewUpdate()
+    }
+
+    func setAutoNightDurationEnabled(_ enabled: Bool) {
+        isAutoNightDurationEnabled = enabled
+    }
+
+    func setNightCaptureStyle(_ style: NightCaptureStyle) {
+        nightCaptureStyle = style
+        service.applyNightPresets(style: style)
+    }
+
+    func updateLongExposure(seconds: Double) {
+        updateSettings { $0.duration = self.secondsToDuration(seconds) }
+    }
+    
+    var longExposureSeconds: Double {
+        shutterSeconds
+    }
+    
+    var longExposureRange: ClosedRange<Double> {
+        1.0...30.0
     }
 
     func openMostRecentPhoto() {
