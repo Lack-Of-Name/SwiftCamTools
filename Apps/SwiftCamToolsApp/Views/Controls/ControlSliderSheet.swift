@@ -87,22 +87,64 @@ struct ControlSliderSheet: View {
                     }
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
 
-                    HStack(spacing: 12) {
-                        Toggle("Deep Exposure", isOn: Binding(
-                            get: { viewModel.nightCaptureStyle == .deepExposure },
-                            set: { if $0 { viewModel.setNightCaptureStyle(.deepExposure) } else { viewModel.setNightCaptureStyle(.off) } }
-                        ))
-                        .toggleStyle(.button)
-                        .tint(viewModel.nightCaptureStyle == .deepExposure ? .blue : .secondary)
+                    VStack(spacing: 16) {
+                        HStack(spacing: 12) {
+                            Toggle("Low Light", isOn: Binding(
+                                get: { viewModel.nightCaptureStyle == .deepExposure },
+                                set: { if $0 { viewModel.setNightCaptureStyle(.deepExposure) } else { viewModel.setNightCaptureStyle(.off) } }
+                            ))
+                            .toggleStyle(.button)
+                            .tint(viewModel.nightCaptureStyle == .deepExposure ? .blue : .secondary)
+                            
+                            Toggle("Light Trails", isOn: Binding(
+                                get: { viewModel.nightCaptureStyle == .lightTrails },
+                                set: { if $0 { viewModel.setNightCaptureStyle(.lightTrails) } else { viewModel.setNightCaptureStyle(.off) } }
+                            ))
+                            .toggleStyle(.button)
+                            .tint(viewModel.nightCaptureStyle == .lightTrails ? .purple : .secondary)
+                        }
+                        .frame(maxWidth: .infinity)
                         
-                        Toggle("Light Trails", isOn: Binding(
-                            get: { viewModel.nightCaptureStyle == .lightTrails },
-                            set: { if $0 { viewModel.setNightCaptureStyle(.lightTrails) } else { viewModel.setNightCaptureStyle(.off) } }
-                        ))
-                        .toggleStyle(.button)
-                        .tint(viewModel.nightCaptureStyle == .lightTrails ? .purple : .secondary)
+                        if viewModel.nightCaptureStyle == .deepExposure {
+                            VStack(spacing: 12) {
+                                Divider()
+                                
+                                // Gain Slider
+                                HStack {
+                                    Text("Gain")
+                                        .font(.caption.bold())
+                                        .frame(width: 50, alignment: .leading)
+                                    Slider(value: $viewModel.msrGain, in: 1.0...50.0)
+                                    Text(String(format: "%.1f", viewModel.msrGain))
+                                        .font(.caption.monospacedDigit())
+                                        .frame(width: 35, alignment: .trailing)
+                                }
+                                
+                                // Offset Slider
+                                HStack {
+                                    Text("Offset")
+                                        .font(.caption.bold())
+                                        .frame(width: 50, alignment: .leading)
+                                    Slider(value: $viewModel.msrOffset, in: -0.5...0.5)
+                                    Text(String(format: "%.2f", viewModel.msrOffset))
+                                        .font(.caption.monospacedDigit())
+                                        .frame(width: 35, alignment: .trailing)
+                                }
+                                
+                                // Saturation Slider
+                                HStack {
+                                    Text("Color")
+                                        .font(.caption.bold())
+                                        .frame(width: 50, alignment: .leading)
+                                    Slider(value: $viewModel.msrSaturation, in: 0.0...2.0)
+                                    Text(String(format: "%.1f", viewModel.msrSaturation))
+                                        .font(.caption.monospacedDigit())
+                                        .frame(width: 35, alignment: .trailing)
+                                }
+                            }
+                            .padding(.horizontal, 4)
+                        }
                     }
-                    .frame(maxWidth: .infinity)
 
                     LogarithmicSlider(
                         value: Binding(get: { viewModel.longExposureSeconds }, set: { viewModel.updateLongExposure(seconds: $0) }),

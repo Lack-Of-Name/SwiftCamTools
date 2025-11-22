@@ -29,6 +29,11 @@ final class CameraViewModel: ObservableObject {
     @Published var previewOrientation: CameraOrientation = .portrait
     @Published var nightCaptureStyle: NightCaptureStyle = .off
     @Published var isAutoNightDurationEnabled: Bool = true
+    
+    // MSR Parameters
+    @Published var msrGain: Float = 12.0 { didSet { updateSettings { $0.msrGain = msrGain } } }
+    @Published var msrOffset: Float = 0.0 { didSet { updateSettings { $0.msrOffset = msrOffset } } }
+    @Published var msrSaturation: Float = 1.2 { didSet { updateSettings { $0.msrSaturation = msrSaturation } } }
 
     var session: AVCaptureSession? { service.session }
 

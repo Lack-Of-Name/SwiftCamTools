@@ -7,6 +7,7 @@ import CoreVideo
 import ImageIO
 import Vision
 import SwiftCamCore
+import SwiftCamImaging
 
 final class LongExposureCaptureSession {
     private let duration: Double
@@ -234,50 +235,50 @@ final class LongExposureCaptureSession {
             "inputSharpness": 0.4
         ])
         
-        // B. Auto-Exposure / Normalization
-        // We analyze the image to see if it's too dark (common if we protected highlights)
-        let extent = processed.extent
-        let vec = CIVector(x: extent.origin.x, y: extent.origin.y, z: extent.size.width, w: extent.size.height)
-        let areaAvg = processed.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: vec])
-        
-        var bitmap = [UInt8](repeating: 0, count: 4)
-        context.render(areaAvg, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
-        
-        let avgLuma = (Double(bitmap[0]) * 0.2126 + Double(bitmap[1]) * 0.7152 + Double(bitmap[2]) * 0.0722) / 255.0
-        
-        // Target a "night" exposure (not too bright, e.g., 0.18 - 0.25 middle gray)
-        // If it's very dark (e.g. 0.05), boost it.
-        // Adjust target based on exposure bias
-        let biasScale = pow(2.0, Double(settings.exposureBias))
-        let targetLuma = 0.20 * biasScale
-        
-        // Always boost if below target, even if very dark (remove the > 0.01 check)
-        if avgLuma < targetLuma && avgLuma > 0.0001 {
-            let boost = targetLuma / avgLuma
-            // Cap the boost to avoid noise explosion (e.g. max 4x = 2 stops)
-            let safeBoost = min(4.0, boost)
-            processed = processed.applyingFilter("CIExposureAdjust", parameters: [
-                kCIInputEVKey: log2(safeBoost)
+        // B. Low Light Enhancement (MSR)
+        // Replaces manual exposure/tone mapping with Multi-Scale Retinex
+        if #available(iOS 15.0, *) {
+            let enhancer = LowLightEnhancer()
+            enhancer.gain = settings.msrGain
+            enhancer.offset = settings.msrOffset
+            enhancer.saturation = settings.msrSaturation
+            
+            if let enhanced = enhancer.enhance(image: processed) {
+                processed = enhanced
+            }
+        } else {
+            // Fallback logic (should not be reached on iOS 17+)
+            // B. Auto-Exposure / Normalization
+            let extent = processed.extent
+            let vec = CIVector(x: extent.origin.x, y: extent.origin.y, z: extent.size.width, w: extent.size.height)
+            let areaAvg = processed.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: vec])
+            
+            var bitmap = [UInt8](repeating: 0, count: 4)
+            context.render(areaAvg, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
+            
+            let avgLuma = (Double(bitmap[0]) * 0.2126 + Double(bitmap[1]) * 0.7152 + Double(bitmap[2]) * 0.0722) / 255.0
+            let biasScale = pow(2.0, Double(settings.exposureBias))
+            let targetLuma = 0.20 * biasScale
+            
+            if avgLuma < targetLuma && avgLuma > 0.0001 {
+                let boost = targetLuma / avgLuma
+                let safeBoost = min(4.0, boost)
+                processed = processed.applyingFilter("CIExposureAdjust", parameters: [
+                    kCIInputEVKey: log2(safeBoost)
+                ])
+            }
+            
+            // C. Local Tone Mapping
+            processed = processed.applyingFilter("CIHighlightShadowAdjust", parameters: [
+                "inputHighlightAmount": 1.0,
+                "inputShadowAmount": 0.5
+            ])
+            
+            // D. Color Grading
+            processed = processed.applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: settings.colorSaturation
             ])
         }
-        
-        // C. Local Tone Mapping (Shadow/Highlight)
-        // Stronger recovery for night mode
-        processed = processed.applyingFilter("CIHighlightShadowAdjust", parameters: [
-            "inputHighlightAmount": 1.0, // Recover blown streetlights
-            "inputShadowAmount": 0.5     // Lift deep shadows
-        ])
-        
-        // D. Color Grading
-        // Night shots often look too yellow/orange (sodium lights). 
-        // A slight cooling filter or just vibrance can help.
-        processed = processed.applyingFilter("CIColorControls", parameters: [
-            kCIInputSaturationKey: settings.colorSaturation
-        ])
-        
-        processed = processed.applyingFilter("CIVibrance", parameters: [
-            "inputAmount": 0.1 // Subtle vibrance
-        ])
         
         // E. Sharpening (Unsharp Mask equivalent)
         processed = processed.applyingFilter("CISharpenLuminance", parameters: [

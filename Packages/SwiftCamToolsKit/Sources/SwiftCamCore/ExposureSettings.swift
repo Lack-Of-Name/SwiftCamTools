@@ -15,6 +15,11 @@ public struct ExposureSettings: Equatable, Codable {
     public var autoFocus: Bool
     public var autoAperture: Bool
     public var colorSaturation: Float
+    
+    // MSR Parameters
+    public var msrGain: Float
+    public var msrOffset: Float
+    public var msrSaturation: Float
 
     public init(
         iso: Float = 800,
@@ -26,7 +31,10 @@ public struct ExposureSettings: Equatable, Codable {
         exposureBias: Float = 0.0,
         autoFocus: Bool = true,
         autoAperture: Bool = true,
-        colorSaturation: Float = 1.0
+        colorSaturation: Float = 1.0,
+        msrGain: Float = 12.0,
+        msrOffset: Float = 0.0,
+        msrSaturation: Float = 1.2
     ) {
         self.iso = iso
         self.duration = duration
@@ -38,6 +46,9 @@ public struct ExposureSettings: Equatable, Codable {
         self.autoFocus = autoFocus
         self.autoAperture = autoAperture
         self.colorSaturation = colorSaturation
+        self.msrGain = msrGain
+        self.msrOffset = msrOffset
+        self.msrSaturation = msrSaturation
     }
 }
 
