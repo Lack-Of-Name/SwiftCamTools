@@ -85,8 +85,8 @@ public class LowLightEnhancer {
     
     public init() {
         do {
-            let kernels = try CIColorKernel.kernels(withMetalString: Self.kernelSource)
-            if let firstKernel = kernels.first {
+            let kernels = try CIKernel.kernels(withMetalString: Self.kernelSource)
+            if let firstKernel = kernels.first as? CIColorKernel {
                 self.kernel = firstKernel
             }
         } catch {
