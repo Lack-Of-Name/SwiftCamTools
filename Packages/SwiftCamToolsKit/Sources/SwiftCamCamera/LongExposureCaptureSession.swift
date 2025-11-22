@@ -80,64 +80,59 @@ final class LongExposureCaptureSession {
         guard let reference = referencePixelBuffer else {
             // First frame is our reference
             // Create a copy of the pixel buffer to keep as reference
-            var copy: CVPixelBuffer?
-            let attachments: CFDictionary?
-            if #available(iOS 15.0, *) {
-                attachments = CVBufferCopyAttachments(pixelBuffer, .shouldPropagate)
-            } else {
-                attachments = CVBufferGetAttachments(pixelBuffer, .shouldPropagate)
-            }
-            CVPixelBufferCreate(kCFAllocatorDefault,
-                              CVPixelBufferGetWidth(pixelBuffer),
-                              CVPixelBufferGetHeight(pixelBuffer),
-                              CVPixelBufferGetPixelFormatType(pixelBuffer),
-                              attachments,
-                              &copy)
-            
-            if let copy = copy {
-                CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
-                CVPixelBufferLockBaseAddress(copy, [])
-                let src = CVPixelBufferGetBaseAddress(pixelBuffer)
-                let dst = CVPixelBufferGetBaseAddress(copy)
-                let size = CVPixelBufferGetDataSize(pixelBuffer)
-                memcpy(dst, src, size)
-                CVPixelBufferUnlockBaseAddress(copy, [])
-                CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly)
-                
+            // Note: We use a deep copy helper to handle planar buffers correctly.
+            if let copy = deepCopy(pixelBuffer) {
                 self.referencePixelBuffer = copy
-                
-                // Initial weight for the reference frame
-                let sharpness = self.calculateSharpness(of: inputImage)
-                let weight = pow(Double(sharpness), 2.0) // Square for stronger differentiation
-                
-                // Accumulate weighted reference
-                let weightedImage = inputImage.applyingFilter("CIColorMatrix", parameters: [
-                    "inputRVector": CIVector(x: CGFloat(weight), y: 0, z: 0, w: 0),
-                    "inputGVector": CIVector(x: 0, y: CGFloat(weight), z: 0, w: 0),
-                    "inputBVector": CIVector(x: 0, y: 0, z: CGFloat(weight), w: 0),
-                    "inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(weight))
-                ])
-                
-                self.accumulator = weightedImage
-                self.totalWeight = weight
-                self.frameCount = 1
+            } else {
+                // If copy fails, we can't use alignment, but we should still capture the first frame!
+                // We just won't have a reference for future alignment (so future frames might be skipped or unaligned).
+                // Actually, if we can't copy, we can't use Vision on a stable buffer.
+                // But we can still accumulate this frame.
+                print("Warning: Failed to copy reference buffer. Alignment will be disabled.")
             }
+            
+            // Initial weight for the reference frame
+            let sharpness = self.calculateSharpness(of: inputImage)
+            let weight = pow(Double(sharpness), 2.0) // Square for stronger differentiation
+            
+            // Accumulate weighted reference
+            let weightedImage = inputImage.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: CGFloat(weight), y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: CGFloat(weight), z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: CGFloat(weight), w: 0),
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(weight))
+            ])
+            
+            self.accumulator = weightedImage
+            self.totalWeight = weight
+            self.frameCount = 1
             return
         }
         
         // Align current frame to reference
-        guard let alignedImage = align(image: inputImage, to: reference) else {
-            // If alignment fails, skip this frame to avoid ghosting
+        // If we have no reference (copy failed previously), we skip alignment and just accumulate (or skip to avoid ghosting?)
+        // If we skip alignment, we get ghosting. But better than no image?
+        // Let's try to align if we have a reference.
+        
+        var imageToAccumulate = inputImage
+        
+        if let alignedImage = align(image: inputImage, to: reference) {
+            imageToAccumulate = alignedImage
+        } else {
+            // Alignment failed.
+            // If it failed because of large movement, we should SKIP the frame.
+            // If it failed because we have no reference, we might want to accumulate anyway?
+            // For now, let's skip to be safe and avoid blurry mess.
             return
         }
         
         // Calculate Sharpness Weight
-        let sharpness = calculateSharpness(of: alignedImage)
+        let sharpness = calculateSharpness(of: imageToAccumulate)
         let weight = pow(Double(sharpness), 2.0)
         
         // Accumulate Weighted
         if let existing = accumulator {
-            let weightedImage = alignedImage.applyingFilter("CIColorMatrix", parameters: [
+            let weightedImage = imageToAccumulate.applyingFilter("CIColorMatrix", parameters: [
                 "inputRVector": CIVector(x: CGFloat(weight), y: 0, z: 0, w: 0),
                 "inputGVector": CIVector(x: 0, y: CGFloat(weight), z: 0, w: 0),
                 "inputBVector": CIVector(x: 0, y: 0, z: CGFloat(weight), w: 0),
@@ -148,6 +143,69 @@ final class LongExposureCaptureSession {
                 kCIInputBackgroundImageKey: weightedImage
             ])
             self.totalWeight += weight
+            self.frameCount += 1
+        }
+    }
+    
+    private func deepCopy(_ source: CVPixelBuffer) -> CVPixelBuffer? {
+        var copy: CVPixelBuffer?
+        let attachments: CFDictionary?
+        if #available(iOS 15.0, *) {
+            attachments = CVBufferCopyAttachments(source, .shouldPropagate)
+        } else {
+            attachments = CVBufferGetAttachments(source, .shouldPropagate)
+        }
+        
+        let width = CVPixelBufferGetWidth(source)
+        let height = CVPixelBufferGetHeight(source)
+        let format = CVPixelBufferGetPixelFormatType(source)
+        
+        let status = CVPixelBufferCreate(kCFAllocatorDefault, width, height, format, attachments, &copy)
+        guard status == kCVReturnSuccess, let destination = copy else { return nil }
+        
+        CVPixelBufferLockBaseAddress(source, .readOnly)
+        CVPixelBufferLockBaseAddress(destination, [])
+        defer {
+            CVPixelBufferUnlockBaseAddress(source, .readOnly)
+            CVPixelBufferUnlockBaseAddress(destination, [])
+        }
+        
+        if CVPixelBufferIsPlanar(source) {
+            let planeCount = CVPixelBufferGetPlaneCount(source)
+            for plane in 0..<planeCount {
+                guard let srcAddress = CVPixelBufferGetBaseAddressOfPlane(source, plane),
+                      let dstAddress = CVPixelBufferGetBaseAddressOfPlane(destination, plane) else { continue }
+                
+                let height = CVPixelBufferGetHeightOfPlane(source, plane)
+                let bytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(source, plane)
+                // Note: Destination might have different padding, so we copy row by row or use the min bytesPerRow
+                let dstBytesPerRow = CVPixelBufferGetBytesPerRowOfPlane(destination, plane)
+                let copyBytes = min(bytesPerRow, dstBytesPerRow)
+                
+                for row in 0..<height {
+                    let srcPtr = srcAddress.advanced(by: row * bytesPerRow)
+                    let dstPtr = dstAddress.advanced(by: row * dstBytesPerRow)
+                    memcpy(dstPtr, srcPtr, copyBytes)
+                }
+            }
+        } else {
+            guard let srcAddress = CVPixelBufferGetBaseAddress(source),
+                  let dstAddress = CVPixelBufferGetBaseAddress(destination) else { return nil }
+            
+            let height = CVPixelBufferGetHeight(source)
+            let bytesPerRow = CVPixelBufferGetBytesPerRow(source)
+            let dstBytesPerRow = CVPixelBufferGetBytesPerRow(destination)
+            let copyBytes = min(bytesPerRow, dstBytesPerRow)
+            
+            for row in 0..<height {
+                let srcPtr = srcAddress.advanced(by: row * bytesPerRow)
+                let dstPtr = dstAddress.advanced(by: row * dstBytesPerRow)
+                memcpy(dstPtr, srcPtr, copyBytes)
+            }
+        }
+        
+        return destination
+    }
             self.frameCount += 1
         }
     }
