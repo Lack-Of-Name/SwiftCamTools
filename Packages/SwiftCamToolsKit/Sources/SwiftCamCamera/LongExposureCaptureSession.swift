@@ -79,11 +79,17 @@ final class LongExposureCaptureSession {
             // First frame is our reference
             // Create a copy of the pixel buffer to keep as reference
             var copy: CVPixelBuffer?
+            let attachments: CFDictionary?
+            if #available(iOS 15.0, *) {
+                attachments = CVBufferCopyAttachments(pixelBuffer, .shouldPropagate)
+            } else {
+                attachments = CVBufferGetAttachments(pixelBuffer, .shouldPropagate)
+            }
             CVPixelBufferCreate(kCFAllocatorDefault,
                               CVPixelBufferGetWidth(pixelBuffer),
                               CVPixelBufferGetHeight(pixelBuffer),
                               CVPixelBufferGetPixelFormatType(pixelBuffer),
-                              CVBufferGetAttachments(pixelBuffer, .shouldPropagate),
+                              attachments,
                               &copy)
             
             if let copy = copy {
@@ -185,23 +191,23 @@ final class LongExposureCaptureSession {
         // We analyze the image to see if it's too dark (common if we protected highlights)
         let extent = processed.extent
         let vec = CIVector(x: extent.origin.x, y: extent.origin.y, z: extent.size.width, w: extent.size.height)
-        if let areaAvg = processed.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: vec]).outputImage {
-            var bitmap = [UInt8](repeating: 0, count: 4)
-            context.render(areaAvg, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
-            
-            let avgLuma = (Double(bitmap[0]) * 0.2126 + Double(bitmap[1]) * 0.7152 + Double(bitmap[2]) * 0.0722) / 255.0
-            
-            // Target a "night" exposure (not too bright, e.g., 0.18 - 0.25 middle gray)
-            // If it's very dark (e.g. 0.05), boost it.
-            let targetLuma = 0.20
-            if avgLuma > 0.01 && avgLuma < targetLuma {
-                let boost = targetLuma / avgLuma
-                // Cap the boost to avoid noise explosion (e.g. max 3x)
-                let safeBoost = min(3.0, boost)
-                processed = processed.applyingFilter("CIExposureAdjust", parameters: [
-                    kCIInputEVKey: log2(safeBoost)
-                ])
-            }
+        let areaAvg = processed.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: vec])
+        
+        var bitmap = [UInt8](repeating: 0, count: 4)
+        context.render(areaAvg, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
+        
+        let avgLuma = (Double(bitmap[0]) * 0.2126 + Double(bitmap[1]) * 0.7152 + Double(bitmap[2]) * 0.0722) / 255.0
+        
+        // Target a "night" exposure (not too bright, e.g., 0.18 - 0.25 middle gray)
+        // If it's very dark (e.g. 0.05), boost it.
+        let targetLuma = 0.20
+        if avgLuma > 0.01 && avgLuma < targetLuma {
+            let boost = targetLuma / avgLuma
+            // Cap the boost to avoid noise explosion (e.g. max 3x)
+            let safeBoost = min(3.0, boost)
+            processed = processed.applyingFilter("CIExposureAdjust", parameters: [
+                kCIInputEVKey: log2(safeBoost)
+            ])
         }
         
         // C. Local Tone Mapping (Shadow/Highlight)
@@ -243,8 +249,8 @@ final class LongExposureCaptureSession {
     private func render(image: CIImage) -> Data? {
         guard let cgImage = context.createCGImage(image, from: image.extent) else { return nil }
         let data = NSMutableData()
-        let heicUTI = AVFileType.heic as CFString
-        let jpegUTI = kUTTypeJPEG as CFString
+        let heicUTI = AVFileType.heic.rawValue as CFString
+        let jpegUTI = AVFileType.jpg.rawValue as CFString
         
         guard let destination = CGImageDestinationCreateWithData(data, heicUTI, 1, nil) ?? 
                                 CGImageDestinationCreateWithData(data, jpegUTI, 1, nil) else {
