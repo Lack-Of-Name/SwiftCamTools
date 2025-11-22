@@ -206,9 +206,6 @@ final class LongExposureCaptureSession {
         
         return destination
     }
-            self.frameCount += 1
-        }
-    }
     
     private func calculateSharpness(of image: CIImage) -> Float {
         // Use the "Edges" filter to find high frequency components
