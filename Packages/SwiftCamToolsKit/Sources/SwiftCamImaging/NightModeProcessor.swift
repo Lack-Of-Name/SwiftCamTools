@@ -237,11 +237,12 @@ public class NightModeProcessor {
             let tileWidth: vImagePixelCount = 8
             let tileHeight: vImagePixelCount = 8
             let clipLimit: Float = 3.0
+            let histogram: UnsafeMutablePointer<vImage_HistogramCalculation>? = nil
 
             let claheError = vImageContrastLimitedAdaptiveHistogramEqualization_ARGB8888(
                 &inBuffer,
                 &outBuffer,
-                UnsafeMutableRawPointer?(nil),
+                histogram,
                 tileWidth,
                 tileHeight,
                 clipLimit,
@@ -249,7 +250,7 @@ public class NightModeProcessor {
             )
 
             if claheError == kvImageNoError {
-                _ = vImageCopyBuffer(&outBuffer, &inBuffer, 4, vImage_Flags(kvImageNoFlags))
+                _ = vImageCopyBuffer(&outBuffer, &inBuffer, UInt32(MemoryLayout<UInt32>.size), vImage_Flags(kvImageNoFlags))
             } else {
                 print("CLAHE failed with error: \(claheError)")
             }
