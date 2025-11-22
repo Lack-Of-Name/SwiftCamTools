@@ -134,7 +134,8 @@ final class CameraViewModel: ObservableObject {
     
     var shutterPresets: [Double] {
         let min = service.minExposureDuration
-        let max = service.maxExposureDuration
+        // If max is 0 (uninitialized), assume a safe default (e.g. 1.0s) so the slider isn't broken at startup.
+        let max = service.maxExposureDuration > 0 ? service.maxExposureDuration : 1.0
         
         // Extended range of standard stops
         let stops = [
@@ -142,9 +143,15 @@ final class CameraViewModel: ObservableObject {
             0.125, 0.25, 0.5, 1, 2, 4, 8, 15, 30, 60
         ]
         
-        // Filter to device capabilities, but always include at least one valid value
-        let valid = stops.filter { $0 >= min && $0 <= max }
-        return valid.isEmpty ? [min] : valid
+        // Filter to device capabilities
+        // We use a small epsilon for float comparison to avoid excluding valid values due to precision
+        let valid = stops.filter { $0 >= min - 0.00001 && $0 <= max + 0.00001 }
+        
+        // Always return at least one value. If valid is empty, return the current setting or min.
+        if valid.isEmpty {
+            return [max(min, min(shutterSeconds, max))]
+        }
+        return valid
     }
     
     var isoRange: ClosedRange<Double> {

@@ -184,10 +184,16 @@ public final class CameraController: NSObject, ObservableObject {
             var targetISO: Float
             var targetDuration: Double
             
+            // Check if the user manually requested a specific exposure that is NOT a long exposure
+            // (e.g. they set 1/8000s but the pipeline routed here for some reason, or they set 1s and want exactly 1s).
+            // However, this method is specifically for "Long Exposure" (simulated or real).
+            // If the user requested 2s, they want the effect of 2s.
+            
+            // If the scene is bright (current shutter is fast), we MUST use the fast shutter to avoid overexposure.
+            // We can't force 1/12s if the correct exposure is 1/1000s.
             if currentDuration < safeShutterSpeed {
                 // Bright Scene:
-                // Use the camera's auto-exposure values to ensure correct exposure.
-                // We will capture multiple frames to simulate the long exposure duration.
+                // Use the camera's auto-exposure values (or current manual values) to ensure correct exposure.
                 targetISO = currentISO
                 targetDuration = currentDuration
             } else {
@@ -196,73 +202,20 @@ public final class CameraController: NSObject, ObservableObject {
                 // 1. Extend shutter to the safe handheld limit.
                 targetDuration = safeShutterSpeed
                 
-                // 2. Calculate how much we boosted exposure by extending time
-                // Ratio = NewDuration / OldDuration
-                // But wait, if we extend time, we gather MORE light.
-                // If the scene was properly exposed at (currentISO, currentDuration),
-                // changing to (currentISO, safeShutterSpeed) would OVEREXPOSE by (safe/current).
-                // So we should LOWER ISO? No, usually in dark scenes, currentISO is already high.
-                
-                // Actually, if we are in a dark scene, the camera is likely already at Max ISO or close to it,
-                // and using a slow shutter (e.g. 1/30s).
-                // We want to go even slower (1/12s) to gather more light and reduce noise (by lowering ISO if possible).
-                
-                // Let's aim for the same EV (Exposure Value) as the camera thinks is right, 
-                // but shifted towards longer shutter and lower ISO for better quality?
-                // OR, does the user want to see *more* than the preview shows (Night Sight)?
-                // Usually Night Sight means "Brighter than reality".
-                
-                // Let's stick to the "Capture Light" philosophy:
-                // We want to capture as much light as possible without blur.
-                targetDuration = safeShutterSpeed
-                
-                // We want to match the brightness of the preview, or slightly brighter.
-                // EV = ISO * Duration
-                // TargetEV = CurrentEV
-                // TargetISO * TargetDuration = CurrentISO * CurrentDuration
-                // TargetISO = (CurrentISO * CurrentDuration) / TargetDuration
+                // 2. Calculate required ISO to match preview brightness
+                // TargetISO = CurrentISO * (CurrentDuration / TargetDuration)
+                // Note: If CurrentDuration > SafeShutter (e.g. 1/3s), we are shortening the shutter to 1/12s to reduce blur.
+                // So we must INCREASE ISO.
+                // If CurrentDuration < SafeShutter (e.g. 1/30s), we are lengthening shutter to 1/12s.
+                // So we can DECREASE ISO (for less noise).
                 
                 let requiredISO = currentISO * Float(currentDuration / targetDuration)
-                
-                // However, if the preview was too dark (underexposed), we might want to boost it.
-                // But we don't know if it was underexposed.
-                // Let's assume the AE is doing its best.
-                
-                targetISO = requiredISO
-                
-                // If the calculated ISO is very low, great! Less noise.
-                // If it's high, we clamp it.
-                
-                // But wait, if the scene is PITCH BLACK, currentDuration might be maxed (e.g. 1/3s) and ISO maxed.
-                // If currentDuration (1/3s) > safeShutterSpeed (1/12s), we are actually REDUCING light by forcing 1/12s.
-                // We should never reduce the shutter speed if the camera thinks it can handle slower (maybe it's on a tripod?).
-                // But we assume handheld.
-                
-                if currentDuration > safeShutterSpeed {
-                    // Camera is using a very slow shutter (risky for handheld).
-                    // We enforce safe shutter.
-                    targetDuration = safeShutterSpeed
-                    // And we must boost ISO to compensate for the lost light.
-                    // TargetISO = CurrentISO * (CurrentDuration / SafeShutter)
-                    targetISO = currentISO * Float(currentDuration / safeShutterSpeed)
-                } else {
-                    // Current duration is faster than safe limit (e.g. 1/30s).
-                    // We extend to 1/12s to gather more light.
-                    targetDuration = safeShutterSpeed
-                    // And we can LOWER ISO to keep same brightness?
-                    // No, for Night Mode we usually want to KEEP the ISO high to get a brighter image, 
-                    // OR lower it to get a cleaner image.
-                    // Let's prioritize a cleaner image (lower ISO) matching the preview brightness.
-                    targetISO = currentISO * Float(currentDuration / safeShutterSpeed)
-                }
-                
-                // Clamp ISO
-                targetISO = max(device.activeFormat.minISO, min(targetISO, maxISO))
-                
-                // If we hit Max ISO and we are still underexposed compared to target,
-                // we might want to extend duration further?
-                // Let's stick to safe shutter for now to avoid blur.
+                targetISO = max(device.activeFormat.minISO, min(requiredISO, maxISO))
             }
+            
+            // Safety Check: If the calculated target results in massive overexposure compared to what the user might expect?
+            // No, we are matching the preview brightness (CurrentISO * CurrentDuration).
+            // So the result should match the preview.
             
             // Apply Settings
             do {
