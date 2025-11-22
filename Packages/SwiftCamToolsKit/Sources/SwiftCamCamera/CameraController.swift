@@ -166,6 +166,11 @@ public final class CameraController: NSObject, ObservableObject {
                 return
             }
 
+            // Capture current state for restoration
+            let previousExposureMode = device.exposureMode
+            let previousDuration = device.exposureDuration
+            let previousISO = device.iso
+            
             // Night Mode / Long Exposure Strategy:
             // 1. Analyze current scene brightness (using current AE values).
             // 2. If Bright: Use current AE settings to prevent overexposure. Stack frames for motion blur.
@@ -284,10 +289,14 @@ public final class CameraController: NSObject, ObservableObject {
                     let handler = self.longExposureCompletion
                     self.longExposureCompletion = nil
                     
-                    // Restore preview settings (Auto Exposure)
+                    // Restore preview settings
                     if let device = self.captureDevice {
                         try? device.lockForConfiguration()
-                        if device.isExposureModeSupported(.continuousAutoExposure) {
+                        if previousExposureMode == .custom {
+                            device.setExposureModeCustom(duration: previousDuration, iso: previousISO, completionHandler: nil)
+                        } else if device.isExposureModeSupported(previousExposureMode) {
+                            device.exposureMode = previousExposureMode
+                        } else if device.isExposureModeSupported(.continuousAutoExposure) {
                             device.exposureMode = .continuousAutoExposure
                         }
                         device.unlockForConfiguration()
