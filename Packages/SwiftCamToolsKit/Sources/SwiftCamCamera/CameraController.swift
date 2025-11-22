@@ -312,6 +312,17 @@ public final class CameraController: NSObject, ObservableObject {
         }
     }
 
+    public func applyNightPresets(style: NightCaptureStyle) {
+        sessionQueue.async {
+            guard let device = self.captureDevice else { return }
+            do {
+                try device.applyNightPresets(style: style)
+            } catch {
+                self.logger.error("Failed to apply night presets: \(error.localizedDescription)")
+            }
+        }
+    }
+
     public func performWhiteoutRecovery(reason: String, revertToAutoExposure: Bool) {
         sessionQueue.async {
             guard let device = self.captureDevice else { return }

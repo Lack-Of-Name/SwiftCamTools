@@ -31,5 +31,7 @@ public final class CameraController {
     public func captureLongExposure(durationSeconds: Double, settings: ExposureSettings, completion: @escaping (Result<Data, CameraError>) -> Void) {
         completion(.failure(.configurationFailed("Camera capture is unavailable on this platform")))
     }
+
+    public func applyNightPresets(style: NightCaptureStyle) {}
 }
 #endif
