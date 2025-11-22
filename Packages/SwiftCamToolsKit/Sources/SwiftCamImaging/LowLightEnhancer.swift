@@ -56,7 +56,13 @@ public class LowLightEnhancer {
         float msr = logY - (logY1 + logY2 + logY3) / 3.0;
         
         // Apply Gain and Offset
-        float Y_new = (msr * gain) + offset;
+        // MSR output is centered around 0. We need to shift it to visible range.
+        // A default offset of 0.5 is often used, or we rely on the user's offset.
+        // If the user's offset is 0.0, we might want to add a base bias.
+        // But let's stick to the user's control + a small bias if needed.
+        // Actually, let's use a sigmoid-like mapping or just a simple linear map.
+        
+        float Y_new = (msr * gain) + offset + 0.5; 
         
         // Normalize to [0, 1] roughly? 
         // Retinex output is arbitrary. We clamp it.

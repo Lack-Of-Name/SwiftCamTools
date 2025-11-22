@@ -269,12 +269,15 @@ final class LongExposureCaptureSession {
         
         // 1. Normalize (Weighted Average)
         // Divide the accumulated sum by the total weight
+        // CRITICAL FIX: We must normalize Alpha as well!
+        // Otherwise, we end up with huge Alpha values (e.g. 30.0), which causes
+        // the image to be crushed to black if treated as premultiplied alpha during rendering.
         let divisor = CGFloat(totalWeight)
         let averaged = finalAccumulator.applyingFilter("CIColorMatrix", parameters: [
             "inputRVector": CIVector(x: 1.0/divisor, y: 0, z: 0, w: 0),
             "inputGVector": CIVector(x: 0, y: 1.0/divisor, z: 0, w: 0),
             "inputBVector": CIVector(x: 0, y: 0, z: 1.0/divisor, w: 0),
-            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1) // Alpha is usually 1.0, but we weighted it too.
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1.0/divisor)
         ])
         
         // 2. Crop to valid area
@@ -288,13 +291,37 @@ final class LongExposureCaptureSession {
         // 3. "Pro" Post-Processing Pipeline
         
         // A. Noise Reduction (Chroma first)
-        // Reduce color noise which is common in night shots
-        // We assume the stacking handled most luma noise.
         let noiseLevel = Double(settings.noiseReductionLevel) * 0.05
         var processed = cropped.applyingFilter("CINoiseReduction", parameters: [
             "inputNoiseLevel": noiseLevel,
             "inputSharpness": 0.4
         ])
+        
+        // A.5. Pre-Exposure Boost (Normalization)
+        // MSR works best when the signal is visible. If the image is pitch black, MSR has nothing to enhance.
+        // We analyze the image brightness and boost it to a target level before MSR.
+        let extent = processed.extent
+        let vec = CIVector(x: extent.origin.x, y: extent.origin.y, z: extent.size.width, w: extent.size.height)
+        let areaAvg = processed.applyingFilter("CIAreaAverage", parameters: [kCIInputExtentKey: vec])
+        
+        var bitmap = [UInt8](repeating: 0, count: 4)
+        context.render(areaAvg, toBitmap: &bitmap, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: nil)
+        
+        let avgLuma = (Double(bitmap[0]) * 0.2126 + Double(bitmap[1]) * 0.7152 + Double(bitmap[2]) * 0.0722) / 255.0
+        
+        // Target a reasonable mid-tone for night shots (e.g. 0.15 - 0.20)
+        // We use the exposure bias to adjust this target.
+        let biasScale = pow(2.0, Double(settings.exposureBias))
+        let targetLuma = 0.18 * biasScale
+        
+        if avgLuma < targetLuma && avgLuma > 0.00001 {
+            let boost = targetLuma / avgLuma
+            // Cap the boost to avoid extreme noise (e.g. max 8x = 3 stops)
+            let safeBoost = min(8.0, boost)
+            processed = processed.applyingFilter("CIExposureAdjust", parameters: [
+                kCIInputEVKey: log2(safeBoost)
+            ])
+        }
         
         // B. Low Light Enhancement (MSR)
         // Replaces manual exposure/tone mapping with Multi-Scale Retinex
