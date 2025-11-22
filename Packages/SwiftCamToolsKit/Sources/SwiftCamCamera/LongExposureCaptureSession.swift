@@ -256,8 +256,14 @@ final class LongExposureCaptureSession {
     }
 
     private func finalizeCapture() {
+        // Fallback: If totalWeight is 0 but we have an accumulator, use it (assume weight 1).
+        // This happens if sharpness calculation fails or returns 0 (e.g. pitch black image).
+        if totalWeight <= 0 && accumulator != nil {
+            totalWeight = 1.0
+        }
+        
         guard let finalAccumulator = accumulator, frameCount > 0, totalWeight > 0 else {
-            completion(.failure(.captureFailed("No frames captured")))
+            completion(.failure(.captureFailed("No frames captured (Count: \(frameCount), Weight: \(totalWeight))")))
             return
         }
         

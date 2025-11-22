@@ -10,22 +10,26 @@ struct ControlSliderSheet: View {
             Capsule()
                 .frame(width: 40, height: 4)
                 .foregroundStyle(.secondary)
+                .padding(.top, 16)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text(control.title.uppercased())
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(subtitle)
-                    .font(.title3.bold())
-                    .foregroundStyle(.primary)
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(control.title.uppercased())
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                        Text(subtitle)
+                            .font(.title3.bold())
+                            .foregroundStyle(.primary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    sliderBody
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 32)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            sliderBody
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 16)
-        .padding(.bottom, 32)
         .background(.regularMaterial)
     }
 
