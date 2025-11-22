@@ -153,21 +153,78 @@ public final class CameraController: NSObject, ObservableObject {
                 return
             }
 
-            let resolvedSettings = self.resolvedSettingsForCapture(settings, device: device)
-            self.lastExposure = resolvedSettings
-            if let error = self.applyExposureSettings(resolvedSettings, enableSubjectMonitoring: false) {
-                DispatchQueue.main.async { completion(.failure(error)) }
+            // Night Mode Strategy:
+            // 1. Determine safe handheld shutter speed (e.g. 1/12s)
+            // 2. Calculate required ISO boost to match the requested total duration exposure
+            // 3. Capture for the total duration
+            
+            let safeShutterSpeed = 1.0 / 12.0 // 1/12s is usually safe for OIS
+            let requestedDuration = durationSeconds
+            
+            // Calculate ISO Boost
+            // If user wants 1s exposure, but we shoot at 1/12s, we need 12x ISO.
+            let exposureRatio = requestedDuration / safeShutterSpeed
+            
+            // Base ISO from settings or auto
+            let baseISO: Float
+            if settings.autoISO {
+                baseISO = Float(max(50, Double(device.activeFormat.minISO))) // Assume base 50-100 roughly
+            } else {
+                baseISO = self.clampISO(Float(settings.iso), for: device)
+            }
+            
+            // Target ISO calculation
+            // We intentionally underexpose by ~1 stop (0.5x) to protect highlights in night scenes (streetlights, etc.)
+            // The stacking and post-processing pipeline will lift the shadows and normalize exposure.
+            var targetISO = baseISO * Float(exposureRatio) * 0.5
+            var targetDuration = safeShutterSpeed
+            
+            // Clamp ISO and adjust duration if needed
+            let maxISO = device.activeFormat.maxISO
+            if targetISO > maxISO {
+                targetISO = maxISO
+                // If we hit max ISO, we must extend shutter speed to compensate, risking blur
+                // New Duration = (Requested / (MaxISO/BaseISO))
+                let maxISORatio = maxISO / baseISO
+                targetDuration = requestedDuration / Double(maxISORatio)
+                // Clamp duration to hardware limits
+                targetDuration = min(CMTimeGetSeconds(device.activeFormat.maxExposureDuration), targetDuration)
+            }
+            
+            // Apply Settings
+            do {
+                try device.lockForConfiguration()
+                let durationTime = CMTimeMakeWithSeconds(targetDuration, preferredTimescale: 1_000_000_000)
+                device.setExposureModeCustom(duration: durationTime, iso: targetISO, completionHandler: nil)
+                self.configureFocus(for: device, autoFocusEnabled: settings.autoFocus)
+                device.unlockForConfiguration()
+            } catch {
+                DispatchQueue.main.async { completion(.failure(.configurationFailed(error.localizedDescription))) }
                 return
             }
 
             self.longExposureCompletion = completion
-            let frameBudget = max(12, Int(durationSeconds * 24.0))
-            self.longExposureSession = LongExposureCaptureSession(duration: durationSeconds, maxFrameCount: frameBudget, settings: resolvedSettings) { [weak self] result in
+            
+            // Frame budget: We capture for 'durationSeconds'.
+            // Expected frames = durationSeconds / targetDuration
+            let expectedFrames = Int(durationSeconds / targetDuration) + 2
+            
+            self.longExposureSession = LongExposureCaptureSession(duration: durationSeconds, maxFrameCount: expectedFrames, settings: settings) { [weak self] result in
                 guard let self else { return }
                 self.sessionQueue.async {
                     self.longExposureSession = nil
                     let handler = self.longExposureCompletion
                     self.longExposureCompletion = nil
+                    
+                    // Restore preview settings (Auto Exposure)
+                    if let device = self.captureDevice {
+                        try? device.lockForConfiguration()
+                        if device.isExposureModeSupported(.continuousAutoExposure) {
+                            device.exposureMode = .continuousAutoExposure
+                        }
+                        device.unlockForConfiguration()
+                    }
+                    
                     DispatchQueue.main.async {
                         self.state = .running
                         handler?(result)
@@ -175,7 +232,7 @@ public final class CameraController: NSObject, ObservableObject {
                 }
             }
 
-            self.scheduleLongExposureTimeout(after: durationSeconds + 0.35)
+            self.scheduleLongExposureTimeout(after: durationSeconds + 0.5) // Little extra buffer
             DispatchQueue.main.async { self.state = .capturing }
         }
     }

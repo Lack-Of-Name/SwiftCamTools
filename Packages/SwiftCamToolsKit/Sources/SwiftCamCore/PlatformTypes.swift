@@ -25,4 +25,8 @@ public struct AVCapturePhoto {
 public class AVCaptureSession {
     public init() {}
 }
+
+#if !canImport(CoreMedia)
+public typealias CMTimeValue = Int64
+#endif
 #endif

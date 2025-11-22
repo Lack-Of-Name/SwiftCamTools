@@ -1,8 +1,6 @@
 import Foundation
 #if canImport(CoreMedia)
 import CoreMedia
-#else
-public typealias CMTimeValue = Int64
 #endif
 
 public struct ExposureSafetyLimits {

@@ -2,8 +2,6 @@ import Foundation
 import Collections
 #if canImport(CoreMedia)
 import CoreMedia
-#else
-public typealias CMTimeValue = Int64
 #endif
 
 public struct ExposureSettings: Equatable, Codable {
