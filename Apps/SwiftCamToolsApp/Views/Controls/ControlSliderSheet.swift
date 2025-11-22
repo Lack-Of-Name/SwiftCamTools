@@ -51,7 +51,7 @@ struct ControlSliderSheet: View {
                     .toggleStyle(SwitchToggleStyle(tint: .blue))
                     .animation(.spring(response: 0.35, dampingFraction: 0.8), value: viewModel.isAutoISOEnabled)
 
-                    ControlValueSlider(
+                    LogarithmicSlider(
                         value: Binding(get: { viewModel.isoValue }, set: { viewModel.updateISO($0) }),
                         range: viewModel.isoRange,
                         formatter: { "ISO " + Int($0).formatted() },
@@ -61,10 +61,18 @@ struct ControlSliderSheet: View {
             )
         case .shutter:
             return AnyView(
-                PresetValueSlider(
+                LogarithmicSlider(
                     value: Binding(get: { viewModel.shutterSeconds }, set: { viewModel.updateShutter(seconds: $0) }),
-                    presets: viewModel.shutterPresets,
+                    range: viewModel.shutterRange,
                     formatter: { ControlSliderSheet.shutterDisplayText($0) }
+                )
+            )
+        case .longExposure:
+            return AnyView(
+                LogarithmicSlider(
+                    value: Binding(get: { viewModel.longExposureSeconds }, set: { viewModel.updateLongExposure(seconds: $0) }),
+                    range: viewModel.longExposureRange,
+                    formatter: { String(format: "%.1fs", $0) }
                 )
             )
         case .aperture:
@@ -149,6 +157,8 @@ struct ControlSliderSheet: View {
             return "Color Boost"
         case .focus:
             return "Focus Assist"
+        case .longExposure:
+            return "Extended Capture"
         }
     }
 }
@@ -199,15 +209,17 @@ private struct ControlValueSlider: View {
     }
 }
 
-private struct PresetValueSlider: View {
+private struct LogarithmicSlider: View {
     @Binding var value: Double
-    let presets: [Double]
+    let range: ClosedRange<Double>
     let formatter: (Double) -> String
+    var isDisabled: Bool = false
+    var tint: Color = .primary
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text(formatter(displayValue))
+                Text(formatter(value))
                     .font(.title2.monospacedDigit())
                     .foregroundStyle(.primary)
                 Spacer()
@@ -215,56 +227,38 @@ private struct PresetValueSlider: View {
 
             Slider(
                 value: Binding(
-                    get: { sliderPosition },
+                    get: {
+                        let safeValue = max(range.lowerBound, min(value, range.upperBound))
+                        let minLog = log(range.lowerBound)
+                        let maxLog = log(range.upperBound)
+                        let currentLog = log(safeValue)
+                        return (currentLog - minLog) / (maxLog - minLog)
+                    },
                     set: { newValue in
-                        let index = nearestIndex(for: newValue)
-                        value = presets[index]
+                        let minLog = log(range.lowerBound)
+                        let maxLog = log(range.upperBound)
+                        let newLog = minLog + (maxLog - minLog) * newValue
+                        value = exp(newLog)
                     }
                 ),
-                in: sliderRange,
-                step: 1
+                in: 0...1
             )
-            .tint(.primary)
-
-            HStack(spacing: 0) {
-                ForEach(presets.indices, id: \.self) { index in
-                    Circle()
-                        .fill(index == nearestIndex ? Color.white : Color.white.opacity(0.35))
-                        .frame(width: index == nearestIndex ? 8 : 6, height: index == nearestIndex ? 8 : 6)
-                    if index != presets.count - 1 {
-                        Spacer(minLength: 0)
+            .tint(tint)
+            .disabled(isDisabled)
+            .overlay {
+                Group {
+                    if isDisabled {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.black.opacity(0.25))
+                            .overlay(
+                                Image(systemName: "lock.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.white)
+                            )
                     }
                 }
             }
-            .frame(height: 12)
         }
-    }
-
-    private var safePresets: [Double] { presets.isEmpty ? [value] : presets }
-
-    private var sliderRange: ClosedRange<Double> {
-        0...Double(max(0, safePresets.count - 1))
-    }
-
-    private var nearestIndex: Int {
-        nearestIndex(for: sliderPosition)
-    }
-
-    private var sliderPosition: Double {
-        guard let index = safePresets.enumerated().min(by: { abs($0.element - value) < abs($1.element - value) })?.offset else {
-            return 0
-        }
-        return Double(index)
-    }
-
-    private var displayValue: Double {
-        let index = min(max(Int(sliderPosition.rounded()), 0), safePresets.count - 1)
-        return safePresets[index]
-    }
-
-    private func nearestIndex(for sliderValue: Double) -> Int {
-        let rounded = Int(sliderValue.rounded())
-        return min(max(rounded, 0), safePresets.count - 1)
     }
 }
 

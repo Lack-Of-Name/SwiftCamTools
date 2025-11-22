@@ -77,7 +77,7 @@ final class CameraViewModel: ObservableObject {
             minISO: minISO,
             maxISO: maxISO,
             minShutterSeconds: minDuration,
-            maxShutterSeconds: maxDuration,
+            maxShutterSeconds: 30.0, // Allow up to 30s for software long exposure
             previewMaxShutterSeconds: 0.08,
             highlightRatioThreshold: 0.88,
             recoveryFrameBudget: 4,
@@ -156,6 +156,21 @@ final class CameraViewModel: ObservableObject {
     
     var isoRange: ClosedRange<Double> {
         Double(service.minISO)...Double(service.maxISO)
+    }
+    
+    var shutterRange: ClosedRange<Double> {
+        let min = service.minExposureDuration
+        let max = service.maxExposureDuration > 0 ? service.maxExposureDuration : 1.0
+        // Ensure range is valid
+        return min...Swift.max(min + 0.0001, max)
+    }
+
+    var longExposureSeconds: Double {
+        Double(settings.duration) / 1_000_000_000.0
+    }
+    
+    var longExposureRange: ClosedRange<Double> {
+        1.0...30.0
     }
 
     func updateISO(_ value: Double) {

@@ -8,6 +8,7 @@ enum CameraControlKind: String, CaseIterable, Identifiable {
     case bias
     case saturation
     case focus
+    case longExposure
 
     var id: String { rawValue }
 
@@ -19,6 +20,7 @@ enum CameraControlKind: String, CaseIterable, Identifiable {
         case .bias: return "plusminus.circle"
         case .saturation: return "drop.halffull"
         case .focus: return "viewfinder.circle"
+        case .longExposure: return "moon.stars"
         }
     }
 
@@ -30,6 +32,7 @@ enum CameraControlKind: String, CaseIterable, Identifiable {
         case .bias: return "Exposure"
         case .saturation: return "Saturation"
         case .focus: return "Focus"
+        case .longExposure: return "Night Mode"
         }
     }
 
